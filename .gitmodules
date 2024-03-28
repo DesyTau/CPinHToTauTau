@@ -1,0 +1,6 @@
+[submodule "modules/columnflow"]
+	path = modules/columnflow
+	url = https://github.com/columnflow/columnflow.git
+[submodule "modules/cmsdb"]
+	path = modules/cmsdb
+	url = https://github.com/uhh-cms/cmsdb.git
