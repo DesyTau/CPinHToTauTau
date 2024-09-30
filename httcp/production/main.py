@@ -130,7 +130,6 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         events = self[tau_weight](events,do_syst = True, **kwargs)
         print("Producing Tauspinner weights...")
         events = self[tauspinner_weight](events, **kwargs)
-    
     print("Producing phi_cp...") 
     events = self[phi_cp](events, **kwargs) 
     return events

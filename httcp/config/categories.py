@@ -163,8 +163,7 @@ def add_categories(config: od.Config) -> None:
         name="tautau_signal_reg",
         id=10 + tautau.id,
         selection=[tautau.selection,
-                   os_charge.selection,
-                   mT_cut.selection],
+                   os_charge.selection],
         label=r"$\tau\tau$ signal region",
     )
         

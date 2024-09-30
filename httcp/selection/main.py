@@ -7,6 +7,7 @@ Exemplary selection methods.
 from typing import Optional
 from operator import and_
 from functools import reduce
+
 from collections import defaultdict, OrderedDict
 
 from columnflow.selection import Selector, SelectionResult, selector
@@ -216,18 +217,13 @@ def main(
     at_least_one_hcand = ak.num(hcand_pairs, axis=-1) > 0
 
     # check if there are at least one hcand [before trigger obj matching]
-    # _lepton_indices = ak.concatenate([good_muon_indices, good_ele_indices, good_tau_indices], axis=1)
     prematch_mask = ak.sum(ak.num(hcand_pairs, axis=-1) > 0, axis=1) > 0
-    # ((ak.num(_lepton_indices, axis=1) >= 2) & (ak.num(good_tau_indices, axis=1) >= 1))
-    # hcand results
+   
     events, good_muon_indices, good_ele_indices, good_tau_indices, etau_channel_mask, mutau_channel_mask, tautau_channel_mask, hcand_array, hcand_results = self[higgscand](
         events, trigger_results, hcand_pairs, domatch=True)
 
     # check if there are at least two leptons with at least one tau [after trigger obj matching]
-    # _lepton_indices = ak.concatenate([good_muon_indices, good_ele_indices, good_tau_indices], axis=1)
-    at_least_one_hcand_matched = ak.num(hcand_array, axis=-1) == 2
-    postmatch_mask = at_least_one_hcand_matched
-    # ((ak.num(_lepton_indices, axis=1) >= 2) & (ak.num(good_tau_indices, axis=1) >= 1))
+    postmatch_mask = ak.num(hcand_array, axis=-1) == 2
     match_res = SelectionResult(
         steps={
             "selected_hcand": prematch_mask,
@@ -255,11 +251,11 @@ def main(
 
     # gen particles info
     # hcand-gentau match = True/False
-    if "is_signal" in list(self.dataset_inst.aux.keys()):
-        if self.dataset_inst.aux["is_signal"]:
-            # print("hcand-gentau matching")
-            events, gentau_results = self[gentau_selection](events, True)
-            results += gentau_results
+    # if "is_signal" in list(self.dataset_inst.aux.keys()):
+    #     if self.dataset_inst.aux["is_signal"]:
+    #         # print("hcand-gentau matching")
+    #         events, gentau_results = self[gentau_selection](events, True)
+    #         results += gentau_results
 
     selected_objects = SelectionResult(
         objects={

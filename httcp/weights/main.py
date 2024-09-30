@@ -23,7 +23,6 @@ def main(self: WeightProducer, events: ak.Array, **kwargs) -> ak.Array:
     weight = ak.Array(np.ones(len(events), dtype=np.float32))
     for column in self.weight_columns:
         weight = weight * Route(column).apply(events)
-
     return events, weight
 
 
@@ -42,6 +41,6 @@ def main_init(self: WeightProducer) -> None:
 
     # declare shifts that the produced event weight depends on
     shift_sources = {
-       "tauspinner",
+       "ts",
     }
     self.shifts |= set(get_shifts_from_sources(self.config_inst, *shift_sources))

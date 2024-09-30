@@ -426,6 +426,7 @@ def tauspinner_weight(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
                 buf[np.isnan(buf)] = 0
                 the_weight = buf
         else:
-            the_weight = np.ones_like(events.event, dtype=np.float32)  
-        events = set_ak_column_f32(events, f"tauspinner_weight{the_name}", the_weight)  
+            print("Tauspinner column does not exist for this sample: filling weights with ones")
+            the_weight = np.ones_like(events.event, dtype=np.float32)
+        events = set_ak_column_f32(events, f"tauspinner_weight{the_name}", the_weight)
     return events

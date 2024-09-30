@@ -458,7 +458,7 @@ def add_hcand_features(cfg: od.Config) -> None:
             )
         
     n_bins_phi_cp = 11
-    for the_ch in ['mu_pi', 'mu_rho', 'mu_a1_1pr', "rho_rho"]:
+    for the_ch in ['mu_pi', 'mu_rho', 'mu_a1_1pr', "rho_rho","pi_pi"]:
         spitted_str = the_ch.split('_')
         if 'a1' in the_ch: 
             title_str = "\\" + spitted_str[0] + fr" a_1, {spitted_str[2]}"
