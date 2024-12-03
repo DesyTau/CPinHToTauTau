@@ -35,7 +35,7 @@ def keep_columns(cfg: od.Config) -> None:
         } | {
             f"Jet.{var}" for var in [
                 "pt", "eta", "phi", "mass", 
-                "btagDeepFlavB", "hadronFlavour", "pt_no_jec", "phi_no_jec","eta_no_jec", "mass_no_jec",
+                "btagDeepFlavB", "hadronFlavour", "pt_no_jec", "phi_no_jec","eta_no_jec", "mass_no_jec", "jec_no_jec_diff",
             ] 
         } | {
             f"Tau.{var}" for var in [
@@ -186,7 +186,7 @@ def add_jet_features(cfg: od.Config) -> None:
     """
     cfg.add_variable(
         name="n_jet",
-        expression="LHE_Njets",
+        expression="nJet",
         binning=(11, -0.5, 10.5),
         x_title="Number of jets",
         discrete_x=True,
@@ -250,6 +250,13 @@ def add_jet_features(cfg: od.Config) -> None:
             binning=(32, -3.2, 3.2),
             x_title=r"Jet $\phi$ no jec",
         )
+    cfg.add_variable(
+        name="jet_jec_no_jec_diff",
+        expression="Jet.jec_no_jec_diff",
+        null_value=EMPTY_FLOAT,
+        binning=(20,-10,10),
+        x_title=r"$Jet_{jec} $p_{T} - $Jet_{no jec} $p_{T}",
+    )
     cfg.add_variable(
         name="ht",
         # expression=lambda events: ak.sum(events.Jet.pt, axis=1),

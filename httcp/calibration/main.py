@@ -26,7 +26,7 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
     },
     produces={
         jec, tau_energy_scale, electron_smearing_scaling, deterministic_seeds, "Jet.pt_no_jec", "Jet.eta_no_jec",
-        "Jet.phi_no_jec", "Jet.mass_no_jec", "PuppiMET.pt_no_jec", "PuppiMET.phi_no_jec", "nJet", "Electron.pt_no_scaling_smearing",
+        "Jet.phi_no_jec", "Jet.mass_no_jec", "PuppiMET.pt_no_jec", "PuppiMET.phi_no_jec", "nJet", "Jet.jec_no_jec_diff", "Electron.pt_no_scaling_smearing",
     },
 )
 def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
@@ -44,14 +44,14 @@ def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     #PuppiMET variables before applying energy corrections
     events = set_ak_column_f32(events, "PuppiMET.pt_no_jec", events.PuppiMET.pt)
     events = set_ak_column_f32(events, "PuppiMET.phi_no_jec", events.PuppiMET.phi)
-    
-    
+
     print("Performing Jet Energy Correction...")
     events = self[jec](events, **kwargs)
     print("Jet Energy Correction...SUCCEDED")
     
+    events = set_ak_column_f32(events, "Jet.jec_no_jec_diff", (events.Jet.pt - events.Jet.pt_no_jec))
     events = set_ak_column_f32(events, "Electron.pt_no_scaling_smearing", events.Electron.pt)
-    
+
     print("Performing electron scaling and smearing correction...")
     events = self[electron_smearing_scaling](events, **kwargs)
     print("Electron scaling and smearing correction...SUCCEDED")

@@ -186,6 +186,9 @@ def electron_weight(self: Producer, events: ak.Array, do_syst: bool,  **kwargs) 
     ch_objects = self.config_inst.x.ch_objects
     year_id = self.config_inst.x.electron_sf.ID.year
     wp_id = self.config_inst.x.electron_sf.ID.wp
+    wp_id_RecoBelow20 = "RecoBelow20"
+    wp_id_Reco20to75 = "Reco20to75"
+    wp_id_RecoAbove75 = "RecoAbove75"
     year_trigger = self.config_inst.x.electron_sf.trig.year
     wp_trigger = self.config_inst.x.electron_sf.trig.wp
     for ch_str in channels:
@@ -196,14 +199,30 @@ def electron_weight(self: Producer, events: ak.Array, do_syst: bool,  **kwargs) 
                 # Create sf array template to make copies and dict for finnal results of all systematics
                 pt =  flat_np_view(electron.pt,axis=1) #take the first particle from the hcand pair
                 eta =  flat_np_view(abs(electron.eta),axis=1)
+                pt_20_mask = flat_np_view(electron.pt < 20)
+                pt_20_75_mask =flat_np_view( (electron.pt >= 20) & (electron.pt <= 75))
+                pt_75_mask = flat_np_view(electron.pt > 75)
                 #Prepare a tuple with the inputs of the correction evaluator
-                ele_sf_args_idiso = lambda syst : (year_id,syst,wp_id,eta,pt)
-                ele_sf_args_trigger = lambda syst : (year_trigger,syst,wp_trigger,eta,pt)
+                ele_sf_args_idiso       = lambda syst : (year_id,syst,wp_id,eta,pt)
+                ele_sf_args_trigger     = lambda syst : (year_trigger,syst,wp_trigger,eta,pt)
+                pt_20    = flat_np_view(ak.where(pt_20_mask,pt,15))
+                pt_20_75 = flat_np_view(ak.where(pt_20_75_mask,pt,25))
+                pt_75    = flat_np_view(ak.where(pt_75_mask, pt, 80))
+                ele_sf_args_RecoBelow20 = lambda syst : (year_id,syst,wp_id_RecoBelow20,eta,pt_20)
+                ele_sf_args_Reco20to75  = lambda syst : (year_id,syst,wp_id_Reco20to75,eta,pt_20_75)
+                ele_sf_args_RecoAbove75 = lambda syst : (year_id,syst,wp_id_RecoAbove75,eta,pt_75)             
                 #Loop over the shifts and calculate for each shift electron scale factor
+
                 for the_shift in shifts:
-                    flat_sf = ak.ones_like(pt)
-                    flat_sf = flat_sf * self.electron_idiso.evaluate(*ele_sf_args_idiso(the_shift))
-                    flat_sf = flat_sf * self.electron_trig.evaluate(*ele_sf_args_trigger(the_shift))
+                    flat_sf        = ak.ones_like(pt)
+                    flat_sf        = flat_sf * self.electron_idiso.evaluate(*ele_sf_args_idiso(the_shift))
+                    flat_sf        = flat_sf * self.electron_trig.evaluate(*ele_sf_args_trigger(the_shift))
+                    RecoBelow20_sf = self.electron_idiso.evaluate(*ele_sf_args_RecoBelow20(the_shift))
+                    Reco20to75_sf  = self.electron_idiso.evaluate(*ele_sf_args_Reco20to75(the_shift))
+                    RecoAbove75_sf = self.electron_idiso.evaluate(*ele_sf_args_RecoAbove75(the_shift))
+                    flat_sf = ak.where(pt_20_mask,flat_sf*RecoBelow20_sf,flat_sf)
+                    flat_sf = ak.where(pt_20_75_mask,flat_sf*Reco20to75_sf,flat_sf)
+                    flat_sf = ak.where(pt_75_mask,flat_sf*RecoAbove75_sf,flat_sf)
                     shaped_sf = ak.unflatten(flat_sf, ak.num(electron.pt, axis=1))
                     sf_values[the_shift] = sf_values[the_shift] * ak.fill_none(ak.firsts(shaped_sf,axis=1), 1.)
 
@@ -239,10 +258,10 @@ def electron_weight_setup(
     correction_set_trig = correctionlib.CorrectionSet.from_string(
         bundle.files.electron_trigger.load(formatter="gzip").decode("utf-8"),
     )
-   
+    
     self.electron_idiso   = correction_set_idiso[self.config_inst.x.electron_sf.ID.corrector]
     self.electron_trig = correction_set_trig[self.config_inst.x.electron_sf.trig.corrector]
-
+    
 
 ### TAU WEIGHT CALCULATOR ###
 
