@@ -50,7 +50,9 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         tauspinner_weight,
         phi_cp,
         category_ids,
-    },
+        "Jet.pt",
+        "Jet.pt_no_jec",
+        },
     produces={
         normalization_weights,
         split_dy,
@@ -65,9 +67,14 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         tauspinner_weight,
         phi_cp,
         category_ids,
+        "Jet.jec_no_jec_diff",
+        "Jet.number_of_jets",
     },
 )
 def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
+    print("Producing Jet features...")
+    events = set_ak_column_f32(events, "Jet.jec_no_jec_diff", (events.Jet.pt - events.Jet.pt_no_jec))
+    events = set_ak_column_f32(events, "Jet.number_of_jets", ak.num(events.Jet))
     print("Producing Hcand features...")
     events = self[hcand_fields](events, **kwargs) 
     events = self[category_ids](events, **kwargs)

@@ -46,7 +46,6 @@ def get_evaluators(
     """
     available_keys = set(correction_set.keys()).union(correction_set.compound.keys())
     corrected_names = []
-
     for name in names:
         if name not in available_keys:
             # Find the closest match using difflib
@@ -522,7 +521,6 @@ def jec_setup(self: Calibrator, reqs: dict, inputs: dict, reader_targets: Insert
         "jec_subset_type1_met": get_evaluators(correction_set, jec_keys_subset_type1_met),
         "junc": dict(zip(sources, get_evaluators(correction_set, junc_keys))),
     }
-
 
 # custom jec calibrator that only runs nominal correction
 jec_nominal = jec.derive("jec_nominal", cls_dict={"uncertainty_sources": []})

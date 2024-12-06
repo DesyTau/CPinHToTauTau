@@ -35,7 +35,7 @@ def keep_columns(cfg: od.Config) -> None:
         } | {
             f"Jet.{var}" for var in [
                 "pt", "eta", "phi", "mass", 
-                "btagDeepFlavB", "hadronFlavour", "pt_no_jec", "phi_no_jec","eta_no_jec", "mass_no_jec", "jec_no_jec_diff",
+                "btagDeepFlavB", "hadronFlavour", "pt_no_jec", "phi_no_jec","eta_no_jec", "mass_no_jec", "jec_no_jec_diff","number_of_jets",
             ] 
         } | {
             f"Tau.{var}" for var in [
@@ -204,6 +204,13 @@ def add_jet_features(cfg: od.Config) -> None:
         binning=(40, 0.0, 400.0),
         unit="GeV",
         x_title=r"$p_{T} of all jets$",
+    )
+    cfg.add_variable(
+        name="Number_of_Jets",
+        expression="Jet.number_of_jets",
+        binning=(11, -0.5, 10.5),
+        x_title=r"Number of Jets",
+        discrete_x=True,
     )
     for i in range(2):
         cfg.add_variable(

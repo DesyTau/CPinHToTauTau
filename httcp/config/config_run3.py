@@ -130,44 +130,7 @@ def add_run3(ana: od.Analysis,
         #for signal datasets create special tag
         if process_name.startswith("h_"):
             proc.add_tag("signal")
-            
-        #if proc.is_mc:
-            # Updated color mapping to avoid repetition and ensure unique colors
-            # if proc.name == "st"                  : proc.color1 = (63, 144, 218)  # Sky Blue
-            # if proc.name == "st_tchannel_t"       : proc.color1 = (63, 144, 218)  # Sky Blue
-            # if proc.name == "st_tchannel_tbar"    : proc.color1 = (87, 144, 252)  # Dodger Blue
-            # if proc.name == "st_twchannel_t_sl"   : proc.color1 = (146, 218, 221) # Pale Turquoise
-            # if proc.name == "st_twchannel_tbar_sl": proc.color1 = (148, 164, 162) # Cadet Grey
-            # if proc.name == "st_twchannel_t_dl"   : proc.color1 = (169, 107, 89)  # Rosy Brown
-            # if proc.name == "st_twchannel_tbar_dl": proc.color1 = (200, 73, 169)  # Medium Violet Red
-            # if proc.name == "st_twchannel_tbar_fh": proc.color1 = (131, 45, 182)  # Amethyst
-            # if proc.name == "tt"                  : proc.color1 = (255, 169, 14)  # Orange
-            # if proc.name == "tt_sl"               : proc.color1 = (255, 169, 14)  # Orange
-            # if proc.name == "tt_dl"               : proc.color1 = (248, 156, 32)  # Dark Golden Rod
-            # if proc.name == "tt_fh"               : proc.color1 = (228, 37, 54)   # Crimson Red
-            # if proc.name == "vv"                  : proc.color1 = (101, 99, 100)  # Charcoal
-            # if proc.name == "ww"                  : proc.color1 = (101, 99, 100)  # Charcoal
-            # if proc.name == "zz"                  : proc.color1 = (185, 172, 112) # Olive Drab
-            # if proc.name == "wz"                  : proc.color1 = (122, 33, 221)  # Blue Violet
-            # if proc.name == "dy_lep"              : proc.color1 = (156, 156, 161) # Dark Gray
-            # if proc.name == "wj"                  : proc.color1 = "#ff9f68"    # Orange Red
-            #if proc.name == "dy_lep": proc.color1 = color=(255,204,102)
-            #if proc.name == "h_ggf_tautau": proc.color1 = (51,53,204)
-            #if proc.name == "wj": proc.color1 = (201,89,84)
-            #if proc.name == "tt_sl": proc.color1 = (153,153,204)
-            #if proc.name == "tt_dl": proc.color1 = (184,184,227)
-            #if proc.name == "tt_fh": proc.color1 = (87,87,141)
-            #if proc.name == "ww" : proc.color1 = (102,204,102)
-            #if proc.name == "wz" : proc.color1 = (49,157,49)
-            #if proc.name == "zz" : proc.color1 = (120,214,120)
-            #if proc.name == "vv" : proc.color1 = (102,204,102)
-            #if proc.name == "zh_htt": proc.color1 = (223,102,72)
-            #if proc.name == "h_ggf_htt": proc.color1 = (51,53,204)
-            #if proc.name == "vv" : proc.color1 = (102,204,102)
-
-        # configuration of colors, labels, etc. can happen here
-       
-
+           
     # add datasets we need to study
     dataset_names_2022preEE = [
         #data
@@ -264,9 +227,13 @@ def add_run3(ana: od.Analysis,
     # verify that the root process of all datasets is part of any of the registered processes
     verify_config_processes(cfg, warn=True)
 
-  
-    from httcp.config.triggers import add_triggers_run3_2022_preEE
-    add_triggers_run3_2022_preEE(cfg)
+    #Adding the triggers 
+    from httcp.config.triggers import add_triggers_run3_2022_preEE, add_triggers_run3_2022_postEE 
+    if year == 2022 and campaign.x.tag == "preEE":
+        add_triggers_run3_2022_preEE(cfg)
+    elif year == 2022 and campaign.x.tag == "postEE":
+        add_triggers_run3_2022_postEE(cfg)
+    
     
     from httcp.config.met_filters import add_met_filters
     add_met_filters(cfg)
@@ -289,7 +256,7 @@ def add_run3(ana: od.Analysis,
         "tt"   : ["tt_sl","tt_dl","tt_fh"],
         "st"   : ["st_tchannel_tbar","st_tchannel_t",
                "st_twchannel_t_fh","st_twchannel_t_sl","st_twchannel_t_dl",
-               "st_twchannel_tbar_sl","st_twchannel_tbar_dl","st_twchannel_tbar_fh"]
+               "st_twchannel_tbar_sl","st_twchannel_tbar_dl","st_twchannel_tbar_fh","st_schannel_t_lep","st_schannel_tbar_lep"],
     }
 
     # dataset groups for conveniently looping over certain datasets
@@ -325,7 +292,7 @@ def add_run3(ana: od.Analysis,
     jerc_postfix = ""
     if year == 2016 and campaign.x.vfp == "post":
         jerc_postfix = "APV"
-    elif year == 2022 and campaign.x.tag == "post":
+    elif year == 2022 and campaign.x.tag == "postEE":
         jerc_postfix = "EE"
     if year < 2022:
         jerc_campaign = f"Summer19UL{year2}{jerc_postfix}"
@@ -338,9 +305,9 @@ def add_run3(ana: od.Analysis,
         "campaign": jerc_campaign,
         "version": {2016: "V7", 2017: "V5", 2018: "V5", 2022: "V2"}[year],
         "jet_type": jet_type,
-        "levels_DATA": ["L2Relative", "L2L3Residual", "L3Absolute"], # "L1L2L3Res"
-        "levels_MC": ["L2Relative", "L3Absolute"], 
-        "levels_for_type1_met": ["L2Relative", "L2L3Residual", "L3Absolute", "L1L2L3Res"],
+        "levels_DATA": [], 
+        "levels_MC": [], 
+        "levels_for_type1_met": ["L2L3Residual"], 
         "uncertainty_sources": [
             # "AbsoluteStat",
             # "AbsoluteScale",
@@ -630,6 +597,10 @@ def add_run3(ana: od.Analysis,
     cfg.add_shift(name="ts_up", id=5, type="shape") #cp-even
     cfg.add_shift(name="ts_down", id=7, type="shape") #cp-odd
     add_shift_aliases(cfg, "ts", {"tauspinner_weight": "tauspinner_weight_{direction}"})
+    
+    cfg.add_shift(name="electron_up", id=8, type="shape")
+    cfg.add_shift(name="electron_down", id=9, type="shape")
+    add_shift_aliases(cfg, "electron", {"electron_weight": "electron_weight_{direction}"})
     # event weight columns as keys in an OrderedDict, mapped to shift instances they depend on
     get_shifts = functools.partial(get_shifts_from_sources, cfg)   
 
