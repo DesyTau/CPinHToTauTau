@@ -287,7 +287,7 @@ def add_run3(ana: od.Analysis,
         "data" : ["data_mu", "data_tau","data_e"],
         "vv"   : ["ww", "wz", "zz"],
         "tt"   : ["tt_sl","tt_dl","tt_fh"],
-        "st"   : ["st_tchannel_tbar","st_tchannel_t",
+        "st"   : ["st_tchannel_tbar","st_tchannel_t","st_schannel_tbar_lep","st_schannel_t_lep",
                "st_twchannel_t_fh","st_twchannel_t_sl","st_twchannel_t_dl",
                "st_twchannel_tbar_sl","st_twchannel_tbar_dl","st_twchannel_tbar_fh"]
     }

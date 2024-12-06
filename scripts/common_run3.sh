@@ -17,11 +17,11 @@ data_e_2022postEE='data_e_E,data_e_F,data_e_G,'
 data_mu_2022postEE='data_mu_E,data_mu_F,data_mu_G,'
 
 bkg_ewk_2022preEE='wj_incl,ww,wz,zz,dy_incl,'
-bkg_top_2022preEE='st_twchannel_t_sl,st_twchannel_t_dl,st_twchannel_tbar_sl,st_twchannel_tbar_dl,st_tchannel_tbar,st_tchannel_t,'
+bkg_top_2022preEE='st_twchannel_t_sl,st_twchannel_t_dl,st_twchannel_tbar_sl,st_twchannel_tbar_dl,st_tchannel_tbar,st_tchannel_t,st_schannel_t_lep,st_schannel_tbar_lep,'
 bkg_ttbar_2022preEE='tt_sl,tt_dl,tt_fh'
 
 bkg_ewk_2022postEE='wj_incl_madgraph,ww,wz,zz,dy_lep_madgraph,'
-bkg_top_2022postEE='st_twchannel_t_sl,st_twchannel_t_dl,st_twchannel_tbar_dl,st_tchannel_tbar,st_tchannel_t,'
+bkg_top_2022postEE='st_twchannel_t_sl,st_twchannel_t_dl,st_twchannel_tbar_sl,st_twchannel_tbar_dl,st_tchannel_tbar,st_tchannel_t,st_schannel_t_lep,st_schannel_tbar_lep,'
 bkg_ttbar_2022postEE='tt_sl,tt_dl,tt_fh'
 
 case $1 in
@@ -30,16 +30,16 @@ case $1 in
 ##############################
     "run3_2022preEE_etau_lim")
         config="run3_2022_preEE_etau_limited"	
-        datasets='dy_incl' 
-        processes='dy_z2mumu,dy_z2ee,dy_lep' 
+        datasets='dy_incl'
+        processes='dy_z2mumu,dy_z2ee,dy_lep,vv'
 	categories=$categories_etau
 	variables=$variables_etau
         workflow='local'
     ;;
     "run3_2022preEE_mutau_lim")
         config="run3_2022_preEE_mutau_limited"	
-        datasets='dy_incl' 
-        processes='dy_z2mumu,dy_z2ee,dy_lep' 
+        datasets='dy_incl'
+        processes='dy_z2mumu,dy_z2ee,dy_lep'
 	categories=$categories_mutau
 	variables=$variables_mutau
         workflow='local'
@@ -48,7 +48,7 @@ case $1 in
         config="run3_2022_preEE_etau"
         data=$data_e_2022preEE
         bkg_ewk=$bkg_ewk_2022preEE
-        bkg_top=$bkg_ewk_2022preEE
+        bkg_top=$bkg_top_2022preEE
         bkg_ttbar=$bkg_ttbar_2022preEE
         datasets="$data$bkg_ewk$bkg_top$bkg_ttbar"
         processes='dy_z2tautau,dy_z2mumu,dy_z2ee,vv,tt,st,wj,data'
