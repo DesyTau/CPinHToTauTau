@@ -39,10 +39,8 @@ REMEMBER: if you are planning to develop the code, forking the repo and then clo
 git clone --recurse-submodules git@github.com:DesyTau/CPinHToTauTau.git
 cd CPinHToTauTau
 ```
-Then you need to use the following setup:
-```
-https://github.com/DesyTau/CPinHToTauTau/blob/main/.gitmodules
-```
+Then you need to use the following setup: https://github.com/DesyTau/CPinHToTauTau/blob/main/.gitmodules
+
 This mean that essentially these 3 additional steps need to be performed:
 1) CPinHToTauTau: https://github.com/DesyTau/CPinHToTauTau/tree/desy_dev; branch desy_dev
 ```
@@ -56,7 +54,7 @@ This is necessary for any kind of correction based on file.json
 cd modules/cmsdb
 ```
 ```
-git chechout origin/desy_dev
+git checkout origin/desy_dev
 ```
 This is necessary for the definition of campaigns, processes and datasets.
 
@@ -65,7 +63,7 @@ This is necessary for the definition of campaigns, processes and datasets.
 cd ../columnflow/
 ```
 ```
-git chechout origin/production
+git checkout origin/production
 ```
 This is necessary to have a stable version of columnflow that it is known to work with the current analysis set up.
 
