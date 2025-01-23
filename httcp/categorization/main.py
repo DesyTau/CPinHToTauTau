@@ -175,3 +175,30 @@ def tau_barrel(self: Categorizer, events: ak.Array, **kwargs) -> tuple[ak.Array,
     for ch_str in channels:
             mask = mask | ak.fill_none(ak.firsts((np.abs(events[f'hcand_{ch_str}'].lep1.eta) <= 1.2), axis=1),False)
     return events, mask
+
+categorizer(uses={'event', 'hcand_*'})
+def deep_tau_wp_mtt(self: Categorizer, events: ak.Array, **kwargs) -> tuple[ak.Array, ak.Array]:
+    channels = self.config_inst.channels.names()
+    deep_tau_vs_e_jet_wps = self.config_inst.x.deep_tau.vs_e_jet_wps
+    deep_tau_vs_mu_wps = self.config_inst.x.deep_tau.vs_mu_wps
+
+    mask = ak.zeros_like(events.event, dtype=np.bool_)
+    for channel in channels:
+        tau = events[f'hcand_{channel}'].lep1
+        channel_mask = ak.ones_like(events[f'hcand_{channel}'].lep1.rawIdx)
+        if channel == 'mutau':
+            channel_mask = channel_mask & (tau.idDeepTau2018v2p5VSjet >= deep_tau_vs_e_jet_wps["Medium"])
+            channel_mask = channel_mask & (tau.idDeepTau2018v2p5VSe   >= deep_tau_vs_e_jet_wps["Tight"])
+            channel_mask = channel_mask & (tau.idDeepTau2018v2p5VSmu  >= deep_tau_vs_mu_wps["Tight"])
+        elif channel == 'etau':
+            channel_mask = channel_mask & (tau.idDeepTau2018v2p5VSjet >= deep_tau_vs_e_jet_wps["Medium"])
+            channel_mask = channel_mask & (tau.idDeepTau2018v2p5VSe   >= deep_tau_vs_e_jet_wps["Tight"])
+            channel_mask = channel_mask & (tau.idDeepTau2018v2p5VSmu  >= deep_tau_vs_mu_wps["Tight"])
+        elif "tautau":
+            tau0 = events[f'hcand_{channel}'].lep0
+            for the_tau in [tau, tau0]:
+                channel_mask = channel_mask & (the_tau.idDeepTau2018v2p5VSjet >= deep_tau_vs_e_jet_wps["Medium"])
+                channel_mask = channel_mask & (the_tau.idDeepTau2018v2p5VSe   >= deep_tau_vs_e_jet_wps["VVLoose"])
+                channel_mask = channel_mask & (the_tau.idDeepTau2018v2p5VSmu  >= deep_tau_vs_mu_wps["VLoose"])
+        mask = mask | ak.fill_none(ak.firsts(channel_mask, axis=1),False)
+    return events, mask

@@ -24,7 +24,7 @@ from httcp.production.generatorZ import generatorZ
 from httcp.production.dilepton_features import hcand_fields
 
 from httcp.production.phi_cp import phi_cp
-from httcp.production.aux_columns import jet_pt_def,jets_taggable
+from httcp.production.aux_columns import jet_pt_def,jets_taggable,number_b_jet
 
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
@@ -51,6 +51,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         tauspinner_weight,
         #phi_cp,
         category_ids,
+        number_b_jet,
         jet_pt_def,
         jets_taggable,
         "Jet.pt",
@@ -71,15 +72,11 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         tauspinner_weight,
         #phi_cp,
         category_ids,
+        number_b_jet,
+        jet_pt_def,
+        jets_taggable,
         "Jet.jec_no_jec_diff",
-        "Jet.number_of_jets",
-        "Jet.n_jets",
-        "Jet.leading_jet_pt",
-        "Jet.subleading_jet_pt",
-        "Jet.delta_eta_jj",
-        "Jet.mjj",
-        "Jet.n_jets_tag",
-        
+        "Jet.number_of_jets",        
     },
 )
 def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
@@ -123,17 +120,9 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     else: channel = channel[0]
     # if channel=='mutau':
     #     events = self[phi_cp](events, **kwargs) 
-    print("Producing jet variables for plotting...") 
     
-    n_jets, leading_jet_pt, subleading_jet_pt, delta_eta_jj, mjj = self[jet_pt_def](events, **kwargs)
-    n_jets_tag = self[jets_taggable](events, **kwargs)
-
-    
-    events = set_ak_column_f32(events, "Jet.n_jets",            n_jets           )
-    events = set_ak_column_f32(events, "Jet.leading_jet_pt",    leading_jet_pt   )
-    events = set_ak_column_f32(events, "Jet.subleading_jet_pt", subleading_jet_pt)
-    events = set_ak_column_f32(events, "Jet.delta_eta_jj",      delta_eta_jj     )
-    events = set_ak_column_f32(events, "Jet.mjj",               mjj              )
-    events = set_ak_column_f32(events, "Jet.n_jets_tag",        n_jets_tag       )
+    print("Producing jet variables for plotting and ML input...") 
+    events = self[jet_pt_def](events, **kwargs)
+    events = self[jets_taggable](events, **kwargs)    
     
     return events

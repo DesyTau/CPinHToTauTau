@@ -83,7 +83,7 @@ def keep_columns(cfg: od.Config) -> None:
                 "decayMode", "rawIdx", "ip_sig", "IPx", "IPy","IPz"
             ]
         } | {
-            "GenTau.*", "GenTauProd.*", "nJet",
+            "GenTau.*", "GenTauProd.*", "nJet", "N_b_jets",
         } | {
             f"hcandprod.{var}" for var in [
                 "pt", "eta", "phi", "mass", "charge",
@@ -305,6 +305,13 @@ def add_jet_features(cfg: od.Config) -> None:
         binning=(40, 10.0, 410.0),
         unit="GeV",
         x_title=r"$m_{jj}$",
+    )
+    cfg.add_variable(
+        name="N_b_jets",
+        expression="N_b_jets",
+        binning=(11, -0.5, 10.5),
+        discrete_x=True,
+        x_title="N_b_jets",
     )      
     cfg.add_variable(
         name="jet_jec_no_jec_diff",
