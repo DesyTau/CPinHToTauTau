@@ -242,12 +242,13 @@ def jec(
     events = set_ak_column_f32(events, "Jet.pt_raw", events.Jet.pt * (1 - events.Jet.rawFactor))
     events = set_ak_column_f32(events, "Jet.mass_raw", events.Jet.mass * (1 - events.Jet.rawFactor))
     
-    def correct_jets(pt, area, eta, rho, evaluator_key="jec"):
+    def correct_jets(pt, phi, area, eta, rho, evaluator_key="jec"):
         # variable naming convention
         variable_map = {
             "JetA": area,
             "JetEta": eta,
             "JetPt": pt,
+            "JetPhi": phi,
             "Rho": ak.values_astype(rho, np.float32),
         }
 
@@ -282,6 +283,7 @@ def jec(
         # get correction factors
         jec_factors_subset_type1_met = correct_jets(
             pt=events.Jet.pt_raw,
+            phi=events.Jet.phi,
             eta=events.Jet.eta,
             area=events.Jet.area,
             rho=rho,
@@ -303,6 +305,7 @@ def jec(
     # factors for full jet correction with all levels
     jec_factors = correct_jets(
         pt=events.Jet.pt_raw,
+        phi=events.Jet.phi,
         eta=events.Jet.eta,
         area=events.Jet.area,
         rho=rho,
@@ -342,6 +345,7 @@ def jec(
     variable_map = {
         "JetEta": events.Jet.eta,
         "JetPt": events.Jet.pt_raw,
+        "JetPhi": events.Jet.phi,
     }
 
     # jet energy uncertainty components

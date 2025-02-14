@@ -99,3 +99,43 @@ for counter, value in enumerate(channels):
         config_name=f"run3_2022_postEE_{value}",
         config_id=15+counter,)
 # -------------------------------------------------------------------------------------------------- #
+
+
+#------------------------ Run3 2023 preBPix samples ------------------------------------------------- #
+from cmsdb.campaigns.run3_2023_preBPix_nano_tau_skim_v2 import campaign_run3_2023_preBPix_nano_tau_skim_v2
+for counter, value in enumerate(channels):
+    add_run3(
+        analysis_httcp,
+        campaign_run3_2023_preBPix_nano_tau_skim_v2.copy(),
+        channel=value,
+        config_name=f"run3_2023_preBPix_{value}_limited",
+        config_id=18+counter,
+        limit_dataset_files=1)
+for counter, value in enumerate(channels):
+    add_run3(
+        analysis_httcp,
+        campaign_run3_2023_preBPix_nano_tau_skim_v2.copy(),
+        channel=value,
+        config_name=f"run3_2023_preBPix_{value}",
+        config_id=21+counter,)
+# -------------------------------------------------------------------------------------------------- #
+
+#------------------------ Run3 2023 postBPix samples ------------------------------------------------- #
+from cmsdb.campaigns.run3_2023_postBPix_nano_tau_skim_v2 import campaign_run3_2023_postBPix_nano_tau_skim_v2
+for counter, value in enumerate(channels):
+    add_run3(
+        analysis_httcp,
+        campaign_run3_2023_postBPix_nano_tau_skim_v2.copy(),
+        channel=value,
+        config_name=f"run3_2023_postBPix_{value}_limited",
+        config_id=24+counter,
+        limit_dataset_files=1)
+for counter, value in enumerate(channels):
+    add_run3(
+        analysis_httcp,
+        campaign_run3_2023_postBPix_nano_tau_skim_v2.copy(),
+        channel=value,
+        config_name=f"run3_2023_postBPix_{value}",
+        config_id=27+counter,)
+# -------------------------------------------------------------------------------------------------- #
+

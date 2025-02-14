@@ -38,11 +38,15 @@ def add_run3(ana: od.Analysis,
 
     # gather campaign data
     cfg.x.year = campaign.x.year
+    cfg.x.tag = campaign.x.tag
     year = cfg.x.year
 
     # validations
     if campaign.x.year == 2022:
         assert campaign.x.tag in ["preEE", "postEE"]
+    if campaign.x.year == 2023:
+        assert campaign.x.tag in ["preBPix", "postBPix"]
+
     # gather campaign data
     year = campaign.x.year
     year2 = year % 100
@@ -66,12 +70,12 @@ def add_run3(ana: od.Analysis,
             e_sf_tag = "2022Re-recoE+PromptFG"
             e_scale_corrector = "2022Re-recoE+PromptFG_ScaleJSON"
             e_smearing_corrector = "2022Re-recoE+PromptFG_SmearingJSON"
-        elif tag == "preBpix"   : 
+        elif tag == "preBPix"   : 
             out_tag = "Summer23"
             e_sf_tag = "2023PromptC"
             e_scale_corrector = "2022Re-recoE+PromptFG_ScaleJSON"
             e_smearing_corrector = "2022Re-recoE+PromptFG_SmearingJSON"
-        elif tag == "postBpix"  : 
+        elif tag == "postBPix"  : 
             out_tag = "Summer23BPix"
             e_sf_tag = "2023PromptD"
             e_scale_corrector = "2022Re-recoE+PromptFG_ScaleJSON"
@@ -208,9 +212,78 @@ def add_run3(ana: od.Analysis,
         "st_twchannel_tbar_fh",
         ]
 
+    dataset_names_2023preBPix = [
+        #data
+        "data_e_Cv123",
+        "data_e_Cv4",
+        "data_mu_Cv123",
+        "data_mu_Cv4",
+        #Drell-Yan
+        "dy_lep_madgraph",
+        # "dy_lep_m10to50",
+        #W+jets
+        "wj_incl_madgraph",
+        #Diboson
+        "ww",
+        "wz",
+        "zz",
+        #ttbar
+        "tt_sl",
+        "tt_dl",
+        "tt_fh",
+        #single top t-channel
+        "st_tchannel_tbar",
+        "st_tchannel_t",
+        #single top s-channel
+        "st_schannel_tbar_lep",
+        "st_schannel_t_lep",
+        # single top tW channel
+        "st_twchannel_t_fh",
+        "st_twchannel_t_sl",
+        "st_twchannel_t_dl",
+        "st_twchannel_tbar_sl",
+        "st_twchannel_tbar_dl",
+        "st_twchannel_tbar_fh",
+        ]
+
+    dataset_names_2023postBPix = [
+        #data
+        "data_e_D",
+        "data_mu_D",
+        #Drell-Yan
+        "dy_lep_madgraph",
+        # "dy_lep_m10to50",
+        #W+jets
+        "wj_incl_madgraph",
+        #Diboson
+        "ww",
+        "wz",
+        "zz",
+        #ttbar
+        "tt_sl",
+        "tt_dl",
+        "tt_fh",
+        #single top t-channel
+        "st_tchannel_tbar",
+        "st_tchannel_t",
+        #single top s-channel
+        "st_schannel_tbar_lep",
+        "st_schannel_t_lep",
+        # single top tW channel
+        "st_twchannel_t_fh",
+        "st_twchannel_t_sl",
+        "st_twchannel_t_dl",
+        "st_twchannel_tbar_sl",
+        "st_twchannel_tbar_dl",
+        "st_twchannel_tbar_fh",
+        ]
+
+    
     dataset_era = {
         "Summer22": dataset_names_2022preEE,
-        "Summer22EE" : dataset_names_2022postEE
+        "Summer22EE" : dataset_names_2022postEE,
+        "Summer23" : dataset_names_2023preBPix,
+        "Summer23BPix" : dataset_names_2023postBPix
     }
     dataset_names = dataset_era[tag]
     
@@ -228,11 +301,11 @@ def add_run3(ana: od.Analysis,
     verify_config_processes(cfg, warn=True)
 
     #Adding the triggers 
-    from httcp.config.triggers import add_triggers_run3_2022_preEE, add_triggers_run3_2022_postEE 
-    if year == 2022 and campaign.x.tag == "preEE":
-        add_triggers_run3_2022_preEE(cfg)
-    elif year == 2022 and campaign.x.tag == "postEE":
-        add_triggers_run3_2022_postEE(cfg)
+    from httcp.config.triggers import add_triggers_run3
+    #if year == 2022 and campaign.x.tag == "preEE":
+    #    add_triggers_run3_2022_preEE(cfg)
+    #elif year == 2022 and campaign.x.tag == "postEE":
+    if year>=2022: add_triggers_run3(cfg)
     
     
     from httcp.config.met_filters import add_met_filters
@@ -294,16 +367,23 @@ def add_run3(ana: od.Analysis,
         jerc_postfix = "APV"
     elif year == 2022 and campaign.x.tag == "postEE":
         jerc_postfix = "EE"
+    elif year == 2023 and campaign.x.tag == "postBPix":
+        jerc_postfix = "BPix"
+
+    jet_type = "AK4PFPuppi"
     if year < 2022:
         jerc_campaign = f"Summer19UL{year2}{jerc_postfix}"
         jet_type = "AK4PFchs"
-    else:
+    elif year==2022:
         jerc_campaign = f"Summer{year2}{jerc_postfix}_22Sep2023"
-        jet_type = "AK4PFPuppi"
+    elif year==2023:
+        jerc_campaign = f"Summer{year2}{jerc_postfix}Prompt23"
 
+   
+ 
     cfg.x.jec = DotDict.wrap({
         "campaign": jerc_campaign,
-        "version": {2016: "V7", 2017: "V5", 2018: "V5", 2022: "V2"}[year],
+        "version": {2016: "V7", 2017: "V5", 2018: "V5", 2022: "V2", 2023:"V1"}[year],
         "jet_type": jet_type,
         "levels_DATA": ["L1L2L3Res"], #"L2Relative", "L2L3Residual", "L3Absolute", "L1L2L3Res" 
         "levels_MC": ["L1L2L3Res"], 
@@ -449,11 +529,11 @@ def add_run3(ana: od.Analysis,
         cfg.x.luminosity = Number(26_671.7, {
             "lumi_13p6TeV_correlated": 0.014j,
         })
-    elif year == 2023 and campaign.x.tag =="preBpix":
+    elif year == 2023 and campaign.x.tag =="preBPix":
         cfg.x.luminosity = Number(17_794, {
             "lumi_13p6TeV_correlated": 0.0j,
         })
-    elif year == 2023 and campaign.x.tag =="postBpix":
+    elif year == 2023 and campaign.x.tag =="postBPix":
         cfg.x.luminosity = Number(9_451, {
             "lumi_13p6TeV_correlated": 0.0j,
         })
@@ -516,7 +596,6 @@ def add_run3(ana: od.Analysis,
                            'Medium' : 3,
                            'Tight'  : 4}
         })
-
     cfg.x.btag_working_points = DotDict.wrap(
         {
             2016 : {
@@ -532,12 +611,39 @@ def add_run3(ana: od.Analysis,
                 },
             },
             2022 : {
-                "deepjet" : { #https://btv-wiki.docs.cern.ch/ScaleFactors/Run3Summer22/
-                    "loose": 0.0583,
-                    "medium": 0.3086,
-                    "tight": 0.7183,
-                }
+                "preEE":{
+                    "deepjet" : { #https://btv-wiki.docs.cern.ch/ScaleFactors/Run3Summer22/
+                        "loose": 0.0583,
+                        "medium": 0.3086,
+                        "tight": 0.7183,
+                    },
+                },
+                "postEE":{
+                    "deepjet" : { #https://btv-wiki.docs.cern.ch/ScaleFactors/Run3Summer22/
+                        "loose": 0.0614,
+                        "medium": 0.3196,
+                        "tight": 0.73,
+                    },
+                },
+            },
+            2023 : {
+                "preBPix":{
+                    "deepjet" : { #https://btv-wiki.docs.cern.ch/ScaleFactors/Run3Summer22/
+                        "loose": 0.0479,
+                        "medium": 0.2431,
+                        "tight": 0.6553,
+                    },
+                },
+                "postBPix":{
+                    "deepjet" : { #https://btv-wiki.docs.cern.ch/ScaleFactors/Run3Summer22/
+                        "loose": 0.048,
+                        "medium": 0.2435,
+                        "tight": 0.6563,
+                    },
+                },
+
             }
+
                     
                 
         },
@@ -547,22 +653,26 @@ def add_run3(ana: od.Analysis,
     jsonpog_dir = "/afs/cern.ch/user/a/anigamov/public/htt_corrections_mirror/jsonpog-integration_latest/POG/"
     jsonpog_tau_dir = "/afs/cern.ch/user/a/anigamov/public/htt_corrections_mirror/jsonpog-integration_tau_latest/POG/"
     corr_dir = "/afs/cern.ch/user/a/anigamov/public/htt_corrections_mirror/"
+    golden_ls = { 
+        2022 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions22/Cert_Collisions2022_355100_362760_Golden.json", 
+        2023 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions23/Cert_Collisions2023_366442_370790_Golden.json"
+    }    
 
     cfg.x.external_files = DotDict.wrap({
         "lumi": {
-            "golden": ("https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions22/Cert_Collisions2022_355100_362760_Golden.json", "v1"),
+            "golden": (golden_ls[year], "v1"),
             "normtag": ("/cvmfs/cms-bril.cern.ch/cms-lumi-pog/Normtags/normtag_BRIL.json", "v1"), #/cvmfs/cms-bril.cern.ch/cms-lumi-pog/Normtags
         },
 
-        "pu_sf"                         : (f"{jsonpog_dir}LUM/{cfg.x.year}_{tag}/puWeights.json.gz", "v1"),
-        "muon_correction"               : f"{jsonpog_dir}MUO/{cfg.x.year}_{tag}/muon_Z.json.gz",
-        "electron_scaling_smearing"     : f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electronSS.json.gz",
-        "electron_idiso"                : f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electron.json.gz",
-        "electron_trigger"              : f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electronHlt.json.gz",
-        "tau_correction"                : f"{jsonpog_tau_dir}TAU/{cfg.x.year}_{tau_tag}/tau_DeepTau2018v2p5_{cfg.x.year}_{tau_tag}.json.gz",
-        "zpt_weight"                    : f"{corr_dir}zpt_reweighting_LO_2022.root",
-        "jet_jerc"                      : (f"{jsonpog_dir}JME/{cfg.x.year}_{tag}/jet_jerc.json.gz", "v2"),
-        "jet_veto_map"                  : (f"{jsonpog_dir}JME/{cfg.x.year}_{tag}/jetvetomaps.json.gz", "v2"),
+        "pu_sf": (f"{jsonpog_dir}LUM/{cfg.x.year}_{tag}/puWeights.json.gz", "v1"),
+        "muon_correction" : f"{jsonpog_dir}MUO/{cfg.x.year}_{tag}/muon_Z.json.gz",
+        "electron_scaling_smearing"  : f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electronSS.json.gz",
+        "electron_idiso"  : f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electron.json.gz",
+        "electron_trigger": f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electronHlt.json.gz",
+        "tau_correction"  : f"{jsonpog_tau_dir}TAU/{cfg.x.year}_{tau_tag}/tau_DeepTau2018v2p5_{cfg.x.year}_{tau_tag}.json.gz",
+        "zpt_weight"      : f"{corr_dir}zpt_reweighting_LO_2022.root",
+        "jet_jerc"  : (f"{jsonpog_dir}JME/{cfg.x.year}_{tag}/jet_jerc.json.gz", "v2"),
+        "jet_veto_map"  : (f"{jsonpog_dir}JME/{cfg.x.year}_{tag}/jetvetomaps.json.gz", "v2"),
         #"fake_factors"                  : (f"{corr_dir}fake_factors_{cfg.x.year}_{campaign.x.tag}_{channel}_fine_pt_pol2.json", "v2"),
         #"met_phi_corr": (f"{jsonpog_dir}JME/{cfg.x.year}{tag}/met{cfg.x.year}.json.gz", "v2"), #FIXME: there is no json present in the jsonpog-integration for this year, I retrieve the json frm: https://cms-talk.web.cern.ch/t/2022-met-xy-corrections/53414/2 but it seems corrupted
     })

@@ -70,7 +70,7 @@ def add_categories(config: od.Config,
             selection=["cat_mutau"],
             label=r"$\mu\tau$ inclusive",
         )
-        
+
     elif channel=='etau':
         add_category(
             config,
@@ -101,7 +101,7 @@ def add_categories(config: od.Config,
         
         "ar_yields"     : {'selection' : ["mt_cut",      "deep_tau_inv_wp",  "lep_iso"],},
         })
-    
+
     add_base_categories(config, channel, category_map, base_selection)
     
     #Add child categories to base categories
@@ -115,3 +115,329 @@ def add_categories(config: od.Config,
     # add_child_categories(config,
     #                      parent_categories=config.categories.names(),
     #                      child_category_map=child_category_map)
+    
+# Old categories in case if someone needs 
+# etau_control_reg_barrel_tau = add_category(
+#     config,
+#     name="etau_control_reg_barrel_tau",
+#     id=450 + etau.id,
+#     selection=["cat_etau"  ,
+#                 "ss_charge"  ,
+#                 "mt_cut"     ,
+#                 "deep_tau_wp",
+#                 "b_veto"     ,
+#                 "tau_barrel" ,
+#                 ],
+#     label=r"$e\tau$ control region\n $\eta_{\tau} \leq 1.2$",
+# )
+
+# etau_signal_reg_endcap_tau_no_mt = add_category(
+#     config,
+#     name="etau_signal_reg_endcap_tau_no_mt",
+#     id=500 + etau.id,
+#     selection=["cat_etau"   ,
+#                "os_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_endcap" ,
+#                ],
+#     label=r"$e\tau$ no mt signal region\n $\eta_{\tau} > 1.2$",
+#     aux={'control_reg': "etau_control_reg_endcap_tau_no_mt"}
+# )
+# etau_control_reg_endcap_tau_no_mt = add_category(
+#     config,
+#     name="etau_control_reg_endcap_tau_no_mt",
+#     id=550 + etau.id,
+#     selection=["cat_etau"   ,
+#                "ss_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_endcap" ,
+#                ],
+#     label=r"$e\tau$ no mt control region\n $\eta_{\tau} > 1.2$",
+# )
+
+# etau_signal_reg_barrel_tau_no_mt = add_category(
+#     config,
+#     name="etau_signal_reg_barrel_tau_no_mt",
+#     id=600 + etau.id,
+#     selection=["cat_etau"  ,
+#                 "os_charge"  ,
+#                 "deep_tau_wp",
+#                 "b_veto"     ,
+#                 "tau_barrel" ,
+#                 ],
+#     label=r"$e\tau$ no mt signal region\n $\eta_{\tau} \leq 1.2$",
+#     aux={'control_reg': "etau_control_reg_barrel_tau_no_mt"}
+# )
+
+# etau_control_reg_barrel_tau_no_mt = add_category(
+#     config,
+#     name="etau_control_reg_barrel_tau_no_mt",
+#     id=650 + etau.id,
+#     selection=["cat_etau"  ,
+#                 "ss_charge"  ,
+#                 "deep_tau_wp",
+#                 "b_veto"     ,
+#                 "tau_barrel" ,
+#                 ],
+#     label=r"$e\tau$ no mt control region\n $\eta_{\tau} \leq 1.2$",
+# )
+
+
+# etau_signal_reg_no_mt_bveto_wp_mtt = add_category(
+#     config,
+#     name="etau_signal_reg_no_mt_bveto_wp_mtt",
+#     id=700 + etau.id,
+#     selection=["cat_etau"  ,
+#                "os_charge"  ,
+#                "deep_tau_wp_mtt",
+#               ],
+#     label=r"$e\tau$ signal region no mt, mtt wp, no b veto",
+#     aux={'control_reg': "etau_contol_reg_no_mt_bveto_wp_mtt"}
+# )
+
+# etau_contol_reg_no_mt_bveto_wp_mtt = add_category(
+#     config,
+#     name="etau_contol_reg_no_mt_bveto_wp_mtt",
+#     id=750 + etau.id,
+#     selection=["cat_etau"  ,
+#                "ss_charge"  ,
+#                "deep_tau_wp_mtt",
+#               ],
+#     label=r"$e\tau$ control region no mt, mtt wp, no b veto",
+# )
+
+
+# etau_signal_reg_no_mt_bveto_wp_mtt = add_category(
+#     config,
+#     name="etau_signal_reg_no_mt_bveto",
+#     id=800 + etau.id,
+#     selection=["cat_etau"  ,
+#                "os_charge"  ,
+#                "deep_tau_wp",
+#               ],
+#     label=r"$e\tau$ signal region no mt, no b veto",
+#     aux={'control_reg': "etau_contol_reg_no_mt_bveto"}
+# )
+
+# etau_contol_reg_no_mt_bveto = add_category(
+#     config,
+#     name="etau_contol_reg_no_mt_bveto",
+#     id=850 + etau.id,
+#     selection=["cat_etau"  ,
+#                "ss_charge"  ,
+#                "deep_tau_wp",
+#               ],
+#     label=r"$e\tau$ control region no mt, no b veto",
+# )
+
+# #################################
+# ### mu-tau channel categories ###
+# #################################
+
+# mutau_signal_reg = add_category(
+#     config,
+#     name="mutau_signal_reg",
+#     id=100 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "mt_cut"     ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#               ],
+#     label=r"$\mu\tau$ signal region",
+#     aux={'control_reg': "mutau_control_reg"}
+# )
+
+# mutau_control_reg = add_category(
+#     config,
+#     name="mutau_control_reg",
+#     id=150 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "mt_cut"     ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                ],
+#     label=r"$\mu\tau$ control region",
+# )
+# mutau_signal_reg_no_mt = add_category(
+#     config,
+#     name="mutau_signal_reg_no_mt",
+#     id=200 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                ],
+#     label=r"$\mu\tau$ no mt",
+#     aux={'control_reg': "mutau_control_reg_no_mt"} 
+# )
+# mutau_control_reg_no_mt = add_category(
+#     config,
+#     name="mutau_control_reg_no_mt",
+#     id=250 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                ],
+#     label=r"$\mu\tau$ control region no mt",
+# )
+# mutau_signal_reg_endcap_tau = add_category(
+#     config,
+#     name="mutau_signal_reg_endcap_tau",
+#     id=300 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "mt_cut"     ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_endcap" ,
+#                ],
+#     label=r"$\mu\tau$ signal region\n $\eta_{\tau} > 1.2$",
+#     aux={'control_reg': "mutau_control_reg_endcap_tau"}
+# )
+# mutau_control_reg_endcap_tau = add_category(
+#     config,
+#     name="mutau_control_reg_endcap_tau",
+#     id=350 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "mt_cut"     ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_endcap" ,
+#                ],
+#     label=r"$\mu\tau$ control region\n $\eta_{\tau} > 1.2$",
+# )
+
+# mutau_signal_reg_barrel_tau = add_category(
+#     config,
+#     name="mutau_signal_reg_barrel_tau",
+#     id=400 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "mt_cut"     ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_barrel" ,
+#                ],
+#     label=r"$\mu\tau$ signal region\n $\eta_{\tau} \leq 1.2$",
+#     aux={'control_reg': "mutau_control_reg_barrel_tau"}
+# )
+
+# mutau_control_reg_barrel_tau = add_category(
+#     config,
+#     name="mutau_control_reg_barrel_tau",
+#     id=450 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "mt_cut"     ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_barrel" ,
+#                ],
+#     label=r"$\mu\tau$ control region\n $\eta_{\tau} \leq 1.2$",
+# )
+
+# mutau_signal_reg_endcap_tau_no_mt  = add_category(
+#     config,
+#     name="mutau_signal_reg_endcap_tau_no_mt",
+#     id=500 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_endcap" ,
+#                ],
+#     label=r"$\mu\tau$ no mt \n $\eta_{\tau} > 1.2$",
+#     aux={'control_reg': "mutau_control_reg_endcap_tau_no_mt"}
+# )
+# mutau_control_reg_endcap_tau_no_mt = add_category(
+#     config,
+#     name="mutau_control_reg_endcap_tau_no_mt",
+#     id=550 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_endcap" ,
+#                ],
+#     label=r"$\mu\tau$ no mt control region\n $\eta_{\tau} > 1.2$",
+# )
+
+# mutau_signal_reg_barrel_tau_no_mt = add_category(
+#     config,
+#     name="mutau_signal_reg_barrel_tau_no_mt",
+#     id=600 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_barrel" ,
+#                ],
+#     label=r"$\mu\tau$ no mt \n $\eta_{\tau} \leq 1.2$",
+#     aux={'control_reg': "mutau_control_reg_barrel_tau_no_mt"}
+# )
+
+# mutau_control_reg_barrel_tau_no_mt = add_category(
+#     config,
+#     name="mutau_control_reg_barrel_tau_no_mt",
+#     id=650 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "deep_tau_wp",
+#                "b_veto"     ,
+#                "tau_barrel" ,
+#                ],
+#     label=r"$\mu\tau$ no mt control region\n $\eta_{\tau} \leq 1.2$",
+# )
+
+# mutau_signal_reg_no_mt_bveto_wp_mtt = add_category(
+#     config,
+#     name="mutau_signal_reg_no_mt_bveto_wp_mtt",
+#     id=700 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "deep_tau_wp_mtt",
+#               ],
+#     label=r"$\mu\tau$ signal region no mt, mtt wp, no b veto",
+#     aux={'control_reg': "mutau_contol_reg_no_mt_bveto_wp_mtt"}
+# )
+
+# mutau_contol_reg_no_mt_bveto_wp_mtt = add_category(
+#     config,
+#     name="mutau_contol_reg_no_mt_bveto_wp_mtt",
+#     id=750 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "deep_tau_wp_mtt",
+#               ],
+#     label=r"$\mu\tau$ control region no mt, mtt wp, no b veto",
+# )
+
+
+# mutau_signal_reg_no_mt_bveto_wp_mtt = add_category(
+#     config,
+#     name="mutau_signal_reg_no_mt_bveto",
+#     id=800 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "os_charge"  ,
+#                "deep_tau_wp",
+#               ],
+#     label=r"$\mu\tau$ signal region no mt, no b veto",
+#     aux={'control_reg': "mutau_contol_reg_no_mt_bveto"}
+# )
+
+# mutau_contol_reg_no_mt_bveto = add_category(
+#     config,
+#     name="mutau_contol_reg_no_mt_bveto",
+#     id=850 + mutau.id,
+#     selection=["cat_mutau"  ,
+#                "ss_charge"  ,
+#                "deep_tau_wp",
+#               ],
+#     label=r"$\mu\tau$ control region no mt, no b veto",
+# )

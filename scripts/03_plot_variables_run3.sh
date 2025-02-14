@@ -23,7 +23,8 @@ args=(
         
         --variables $variables
         --file-types pdf
-	--hist-hooks ff_method
+	      --hist-hooks ff_method
+
         --general-settings "cms-label=pw"
         "${@:2}"
     )

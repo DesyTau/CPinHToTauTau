@@ -8,7 +8,7 @@ import order as od
 
 from httcp.config.trigger_util import Trigger, TriggerLeg
     
-def add_triggers_run3_2022_postEE(config: od.Config) -> None:
+def add_triggers_run3(config: od.Config) -> None:
     """
     Adds all triggers to a *config*. For the conversion from filter names to trigger bits, see
     https://github.com/cms-sw/cmssw/blob/master/PhysicsTools/NanoAOD/python/triggerObjects_cff.py.

@@ -49,9 +49,10 @@ def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     events = self[jec](events, **kwargs)
     events = set_ak_column_f32(events, "Electron.pt_no_scaling_smearing", events.Electron.pt)
     
-    print("Performing electron scaling and smearing correction...")
-    events = self[electron_smearing_scaling](events, **kwargs)
-    print("Electron scaling and smearing correction...SUCCEDED")
+    if self.config_inst.x.year==2022: # scaling and smearing is not available for 2023
+        print("Performing electron scaling and smearing correction...")
+        events = self[electron_smearing_scaling](events, **kwargs)
+        print("Electron scaling and smearing correction...SUCCEDED")
     
     #events = self[met_phi](events, **kwargs)
     #events = self[jer](events, **kwargs)

@@ -195,10 +195,14 @@ def electron_weight(self: Producer, events: ak.Array, do_syst: bool,  **kwargs) 
                 electron = hcand[lep]
                 # Create sf array template to make copies and dict for finnal results of all systematics
                 pt =  flat_np_view(electron.pt,axis=1) #take the first particle from the hcand pair
-                eta =  flat_np_view(abs(electron.eta),axis=1)
+                eta =  flat_np_view(electron.eta,axis=1)
+                phi =  flat_np_view(electron.phi,axis=1)
                 #Prepare a tuple with the inputs of the correction evaluator
-                ele_sf_args_idiso = lambda syst : (year_id,syst,wp_id,eta,pt)
-                ele_sf_args_trigger = lambda syst : (year_trigger,syst,wp_trigger,eta,pt)
+                if "2023" in year_id:
+                    ele_sf_args_idiso = lambda syst : (year_id,syst,wp_id,eta,pt,phi)
+                else:
+                    ele_sf_args_idiso = lambda syst :(year_id,syst,wp_id,eta,pt)
+                ele_sf_args_trigger = lambda syst :(year_trigger,syst,wp_trigger,eta,pt)
                 #Loop over the shifts and calculate for each shift electron scale factor
                 for the_shift in shifts:
                     flat_sf = ak.ones_like(pt)

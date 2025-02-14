@@ -13,7 +13,7 @@ from columnflow.selection.util import create_collections_from_masks
 from columnflow.util import maybe_import
 from columnflow.columnar_util import EMPTY_FLOAT, Route, set_ak_column
 from columnflow.columnar_util import optional_column as optional
-
+from columnflow.production.util import attach_coffea_behavior
 #from httcp.production.PhiCPNeutralPion import PhiCPNPMethod
 from httcp.production.ReArrangeHcandProds import reArrangeDecayProducts, reArrangeGenDecayProducts
 from httcp.production.PhiCP_Producer import ProduceDetPhiCP, ProduceGenPhiCP
@@ -24,7 +24,7 @@ from httcp.production.generatorZ import generatorZ
 from httcp.production.dilepton_features import hcand_fields
 
 from httcp.production.phi_cp import phi_cp
-
+from httcp.production.aux_columns import jet_pt_def,jets_taggable, number_b_jet
 
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
@@ -37,6 +37,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
 
 @producer(
     uses={
+        attach_coffea_behavior,
         normalization_weights,
         split_dy,
         pu_weight,
@@ -51,10 +52,14 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         tauspinner_weight,
         #phi_cp,
         category_ids,
+        jet_pt_def,
+        jets_taggable,
+        number_b_jet,
         "Jet.pt",
         "Jet.pt_no_jec",
         },
     produces={
+        attach_coffea_behavior,
         normalization_weights,
         split_dy,
         pu_weight,
@@ -70,13 +75,19 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         #phi_cp,
         category_ids,
         "Jet.jec_no_jec_diff",
-        "Jet.number_of_jets",
     },
 )
 def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
+    
+    # ensure coffea behaviors are loaded
+    events = self[attach_coffea_behavior](events, **kwargs)
     print("Producing Jet features...")
     events = set_ak_column_f32(events, "Jet.jec_no_jec_diff", (events.Jet.pt - events.Jet.pt_no_jec))
-    events = set_ak_column_f32(events, "Jet.number_of_jets", ak.num(events.Jet))
+    print("Producing jet variables for plotting...") 
+    events = self[jet_pt_def](events, **kwargs)
+    events = self[jets_taggable](events, **kwargs)   
+    print("Producing Number of b-jets for categorization")
+    events = self[number_b_jet](events, **kwargs)
     print("Producing Hcand features...")
     events = self[hcand_fields](events, **kwargs) 
     events = self[category_ids](events, **kwargs)
@@ -102,17 +113,17 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         events = self[tau_weight](events,do_syst = True, **kwargs)
         print("Producing Tauspinner weights...")
         events = self[tauspinner_weight](events, **kwargs)
-    
+
     print("Producing Fake Factor weights...")
     events = self[fake_factors](events, **kwargs)
     #print("Producing phi_cp...") 
-
     # TEMPORARY FIX. CHANGE AFTERWARDS
     channel = self.config_inst.channels.names()
     if len(channel) > 1:
         ch_str = ' '.join([str(ch) for ch in channel])
         raise ValueError(f"attempt to process more than one channel: {ch_str}")
     else: channel = channel[0]
+
 #    if channel=='mutau':
         #events = self[phi_cp](events, **kwargs) 
     return events
@@ -190,4 +201,3 @@ def ff_method(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         raise ValueError(f"attempt to process more than one channel: {ch_str}")
     else: channel = channel[0]
     return events
-
