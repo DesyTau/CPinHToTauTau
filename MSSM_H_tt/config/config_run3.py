@@ -318,6 +318,7 @@ def add_run3(ana: od.Analysis,
         dataset = cfg.add_dataset(campaign.get_dataset(dataset_name))
         if dataset_name.startswith("h_"):
             dataset.add_tag("signal")
+            dataset.add_tag("is_mc")
         if dataset.name.startswith("tt_"):
             dataset.add_tag({"has_top", "ttbar", "tt"})    
         # for testing purposes, limit the number of files to 1
@@ -569,11 +570,11 @@ def add_run3(ana: od.Analysis,
         })
     elif year == 2023 and campaign.x.tag =="preBPix":
         cfg.x.luminosity = Number(17_794, {
-            "lumi_13p6TeV_correlated": 0.0j,
+            "lumi_13p6TeV_correlated": 0.013j,
         })
     elif year == 2023 and campaign.x.tag =="postBPix":
         cfg.x.luminosity = Number(9_451, {
-            "lumi_13p6TeV_correlated": 0.0j,
+            "lumi_13p6TeV_correlated": 0.013j,
         })
     elif year == 2024:
         cfg.x.luminosity = Number(0, {
@@ -776,7 +777,7 @@ def add_run3(ana: od.Analysis,
     jsonpog_dir = "/afs/cern.ch/user/a/anigamov/public/htt_corrections_mirror/jsonpog-integration_latest/POG/"
     jsonpog_tau_dir = "/afs/cern.ch/user/a/anigamov/public/htt_corrections_mirror/jsonpog-integration_tau_latest/POG/"
     corr_dir = "/afs/cern.ch/user/a/anigamov/public/htt_corrections_mirror/"
-
+    j_dir = "/afs/cern.ch/user/j/jmalvaso/public/muonefficiencies/Run3/"
     golden_ls = { 
         2022 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions22/Cert_Collisions2022_355100_362760_Golden.json", 
         2023 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions23/Cert_Collisions2023_366442_370790_Golden.json"
@@ -790,6 +791,7 @@ def add_run3(ana: od.Analysis,
 
         "pu_sf"                    : (f"{jsonpog_dir}LUM/{cfg.x.year}_{tag}/puWeights.json.gz", "v2"),
         "muon_correction"          : f"{jsonpog_dir}MUO/{cfg.x.year}_{tag}/muon_Z.json.gz",
+        "muon_correction_eff"      : f"{j_dir}Muon_Z_HLT_{cfg.x.year}_{campaign.x.tag}_eta_pt.json",
         "electron_scaling_smearing": f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electronSS.json.gz",
         "electron_idiso"           : f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electron.json.gz",
         "electron_trigger"         : f"{jsonpog_dir}EGM/{cfg.x.year}_{tag}/electronHlt.json.gz",
@@ -818,7 +820,13 @@ def add_run3(ana: od.Analysis,
                  'wp': "HLT_SF_Ele30_TightID"},
         'xtrig': {'corrector': "Electron-HLT-SF",
                   'year': e_sf_tag,
-                  'wp': "HLT_SF_Ele24_TightID"}
+                  'wp': "HLT_SF_Ele24_TightID"},
+        'MC_eff': {'corrector': "Electron-HLT-McEff",
+                  'year': e_sf_tag,
+                  'wp': "HLT_SF_Ele30_TightID"},
+        'Data_eff': {'corrector': "Electron-HLT-DataEff",
+                     'year': e_sf_tag,
+                     'wp': "HLT_SF_Ele30_TightID"},
     })
     
     # --------------------------------------------------------------------------------------------- #
@@ -835,7 +843,13 @@ def add_run3(ana: od.Analysis,
         'trig': {'corrector': "NUM_IsoMu24_DEN_CutBasedIdTight_and_PFIsoTight",
                  'year': f"{year}_{tag}"},
         'xtrig': {'corrector': "NUM_IsoMu20_DEN_CutBasedIdTight_and_PFIsoTight",
-                  'year': f"{year}_{tag}"}
+                  'year': f"{year}_{tag}"},
+        'MC_eff': {'corrector': "Muon-HLT-McEff",
+                  'year': f"{cfg.x.year}_{campaign.x.tag}",
+                  'path': "NUM_IsoMu24_DEN_CutBasedIdTight_and_PFIsoTight"},
+        'Data_eff': {'corrector': "Muon-HLT-DataEff",
+                     'year': f"{cfg.x.year}_{campaign.x.tag}",
+                     'path': "NUM_IsoMu24_DEN_CutBasedIdTight_and_PFIsoTight"},
     })
     
     # target file size after MergeReducedEvents in MB
@@ -861,6 +875,10 @@ def add_run3(ana: od.Analysis,
     cfg.add_shift(name="top_pt_up", id=10, type="shape")
     cfg.add_shift(name="top_pt_down", id=11, type="shape")
     add_shift_aliases(cfg, "top_pt", {"top_pt_weight": "top_pt_weight_{direction}"})
+    
+    cfg.add_shift(name="Trigger_SF_up", id=12, type="shape")
+    cfg.add_shift(name="Trigger_SF_down", id=13, type="shape")
+    add_shift_aliases(cfg, "Trigger_SF", {"Trigger_SF_weight": "Trigger_SF_weight_{direction}"})
     
     # event weight columns as keys in an OrderedDict, mapped to shift instances they depend on
     get_shifts = functools.partial(get_shifts_from_sources, cfg)   

@@ -16,6 +16,7 @@ args=(
         --file-types pdf,png
 	    --hist-hooks qcd_hook
         --general-settings "cms-label=pw"
+        --process-settings "h_ggf_htt,unstack,scale=stack"
         "${@:2}"
     )
 echo law run cf.PlotVariables1D "${args[@]}"

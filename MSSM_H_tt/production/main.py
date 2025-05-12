@@ -15,7 +15,7 @@ from columnflow.columnar_util import EMPTY_FLOAT, Route, set_ak_column
 from columnflow.columnar_util import optional_column as optional
 from columnflow.production.util import attach_coffea_behavior
 
-from MSSM_H_tt.production.weights import muon_weight, tau_weight, get_mc_weight, zpt_weight, electron_weight
+from MSSM_H_tt.production.weights import muon_weight, tau_weight, get_mc_weight, zpt_weight, electron_weight, trigger_sf
 from MSSM_H_tt.production.sample_split import split_dy
 from MSSM_H_tt.production.generatorZ import generatorZ
 from MSSM_H_tt.production.dilepton_features import hcand_fields,hcand_mt
@@ -44,6 +44,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         muon_weight,
         tau_weight,
         electron_weight,
+        trigger_sf,
         generatorZ,
         zpt_weight,
         get_mc_weight,
@@ -59,8 +60,6 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         D_zeta,
         DY_pTll_recoil,
         DY_pTll_recoil_unc,
-        "Jet.pt",
-        "Jet.pt_no_jec",
         },
     produces={
         attach_coffea_behavior,
@@ -71,6 +70,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         get_mc_weight,
         tau_weight,
         electron_weight,
+        trigger_sf,
         generatorZ,
         zpt_weight,
         hcand_fields,
@@ -84,8 +84,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         top_pt_weight,
         D_zeta,
         DY_pTll_recoil,
-        DY_pTll_recoil_unc,
-        "Jet.jec_no_jec_diff",       
+        DY_pTll_recoil_unc,     
     },
     # whether weight producers should be added and called
     produce_weights=True,
@@ -94,8 +93,6 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     processes = self.dataset_inst.processes.names()
     # ensure coffea behaviors are loaded
     events = self[attach_coffea_behavior](events, **kwargs)
-    print("Producing Jet features...")
-    events = set_ak_column_f32(events, "Jet.jec_no_jec_diff", (events.Jet.pt - events.Jet.pt_no_jec))
     print("Producing jet variables for plotting...") 
     events = self[jet_pt_def](events, **kwargs)
     events = self[jets_taggable](events, **kwargs)   
@@ -112,7 +109,7 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     
     print("Producing D_zeta features...")
     events = self[D_zeta](events, **kwargs)
-    
+
     if self.dataset_inst.is_mc:
         if ak.any(['dy' in proc for proc in processes]) or ak.any(['wj' in proc for proc in processes]):
             print("Applying recoil corrections on DY and W+jets samples...")
@@ -132,6 +129,8 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         events = self[muon_weight](events,do_syst = True, **kwargs)
         print("Producing Electron weights...")
         events = self[electron_weight](events,do_syst = True, **kwargs)
+        print("Producing trigger SF from efficiencies...")
+        events = self[trigger_sf](events,do_syst = True, **kwargs)
         print("Producing Tau weights...")
         events = self[tau_weight](events,do_syst = True, **kwargs)
         print("Producing btag weights...")
@@ -147,6 +146,6 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
             events = self[top_pt_weight](events, **kwargs)
     print("Producing mT distributions...") 
     events = self[hcand_mt](events, **kwargs) 
-    
+
     return events
     
