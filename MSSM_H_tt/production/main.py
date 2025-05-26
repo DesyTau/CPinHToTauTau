@@ -24,8 +24,8 @@ from MSSM_H_tt.production.aux_columns import jet_pt_def,jets_taggable,number_b_j
 from MSSM_H_tt.production.btag_SF import btag_weight_SF
 from MSSM_H_tt.production.top_pt_weight import top_pt_weight, gen_parton_top
 from MSSM_H_tt.production.D_zeta import D_zeta
-from MSSM_H_tt.production.DY_recoil import DY_pTll_recoil
-from MSSM_H_tt.production.DY_recoil_unc import DY_pTll_recoil_unc
+from MSSM_H_tt.production.met_recoil_correction import gen_boson, met_recoil
+#from MSSM_H_tt.production.DY_recoil_unc import DY_pTll_recoil_unc
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
 coffea = maybe_import("coffea")
@@ -58,8 +58,10 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         gen_parton_top,
         top_pt_weight,
         D_zeta,
-        DY_pTll_recoil,
-        DY_pTll_recoil_unc,
+        gen_boson,
+        met_recoil,
+        trigger_sf,
+        #DY_pTll_recoil_unc,
         },
     produces={
         attach_coffea_behavior,
@@ -83,8 +85,10 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         gen_parton_top,
         top_pt_weight,
         D_zeta,
-        DY_pTll_recoil,
-        DY_pTll_recoil_unc,     
+        gen_boson,
+        met_recoil,
+        trigger_sf,
+        #DY_pTll_recoil_unc,     
     },
     # whether weight producers should be added and called
     produce_weights=True,
@@ -98,6 +102,8 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     events = self[jets_taggable](events, **kwargs)   
     print("Producing Number of b-jets for categorization")
     events = self[number_b_jet](events, **kwargs)
+    print("Producing D_zeta features...")
+    events = self[D_zeta](events, **kwargs)
     print("Producing Hcand features...")
     events = self[hcand_fields](events, **kwargs) 
     events = self[category_ids](events, **kwargs)
@@ -107,15 +113,18 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
             print("Splitting Drell-Yan dataset...")
             events = self[split_dy](events,**kwargs)
     
+    
     print("Producing D_zeta features...")
     events = self[D_zeta](events, **kwargs)
 
     if self.dataset_inst.is_mc:
-        if ak.any(['dy' in proc for proc in processes]) or ak.any(['wj' in proc for proc in processes]):
-            print("Applying recoil corrections on DY and W+jets samples...")
-            events = self[DY_pTll_recoil](events,**kwargs)
-            print("Evaluate recoil corrections uncertainties for DY and W+jets samples...")
-            events = self[DY_pTll_recoil_unc](events,**kwargs)
+        #if ak.any(['dy' in proc for proc in processes]) or ak.any(['wj' in proc for proc in processes]):
+        print("Applying recoil corrections on DY and W+jets samples...")
+        events = self[gen_boson](events, **kwargs)
+        events = self[met_recoil](events,**kwargs)   
+            # events = self[DY_pTll_recoil](events,**kwargs)
+            # print("Evaluate recoil corrections uncertainties for DY and W+jets samples...")
+            # events = self[DY_pTll_recoil_unc](events,**kwargs)
         print("Getting mc weights...")
         events = self[get_mc_weight](events, **kwargs)
         print("Producing Normalization weights...")
@@ -129,8 +138,8 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         events = self[muon_weight](events,do_syst = True, **kwargs)
         print("Producing Electron weights...")
         events = self[electron_weight](events,do_syst = True, **kwargs)
-        print("Producing trigger SF from efficiencies...")
-        events = self[trigger_sf](events,do_syst = True, **kwargs)
+        print("Producing SFs from efficiencies...")
+        events = self[trigger_sf](events, **kwargs)
         print("Producing Tau weights...")
         events = self[tau_weight](events,do_syst = True, **kwargs)
         print("Producing btag weights...")

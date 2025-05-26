@@ -26,8 +26,8 @@ def add_triggers_run3(config: od.Config) -> None:
                 TriggerLeg(
                     pdg_id=13,
                     trigger_bits=[2,4],
-                    min_pt=26.0,
-                    min_eta=2.4,
+                    min_pt  = 26.0,
+                    min_eta = 2.4,
                 ),
             ],
             tags={"single_trigger", "single_mu", "channel_mu_tau"},

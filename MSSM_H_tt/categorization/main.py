@@ -7,6 +7,7 @@ Main categories file for the Higgs CP analysis
 from columnflow.categorization import Categorizer, categorizer
 from columnflow.util import maybe_import
 
+
 ak = maybe_import("awkward")
 np = maybe_import("numpy")
 
@@ -187,4 +188,19 @@ def tau_barrel(self: Categorizer, events: ak.Array, **kwargs) -> tuple[ak.Array,
     mask = ak.zeros_like(events.event, dtype=np.bool_)
     for ch_str in channels:
             mask = mask | ak.fill_none(ak.firsts((np.abs(events[f'hcand_{ch_str}'].lep1.eta) <= 1.2), axis=1),False)
+    return events, mask
+
+@categorizer(uses={'D_zeta'})
+def D_zeta_cut_low(self: Categorizer, events: ak.Array, **kwargs) -> tuple[ak.Array, ak.Array]:
+    mask = (events.D_zeta >= -35) & (events.D_zeta < -10)
+    return events, mask
+
+@categorizer(uses={'D_zeta'})
+def D_zeta_cut_mid(self: Categorizer, events: ak.Array, **kwargs) -> tuple[ak.Array, ak.Array]:
+    mask = (events.D_zeta >= -10) & (events.D_zeta < 30)
+    return events, mask
+
+@categorizer(uses={'D_zeta'})
+def D_zeta_cut_high(self: Categorizer, events: ak.Array, **kwargs) -> tuple[ak.Array, ak.Array]:
+    mask = events.D_zeta >= 30
     return events, mask

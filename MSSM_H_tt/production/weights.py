@@ -116,8 +116,8 @@ def muon_weight(self: Producer, events: ak.Array, do_syst: bool,  **kwargs) -> a
     
     shifts = ["nominal"]
     if do_syst: shifts=[*shifts,"systup", "systdown"] 
-    shifts_eff = ["nom"]
-    if do_syst: shifts_eff=[*shifts_eff,"stat", "syst"] 
+    shifts_eff = ["nominal"]
+    if do_syst: shifts_eff=[*shifts_eff,"systup", "systdown"] 
     sf_values = {}
     Data_eff_values = {}
     MC_eff_values = {}
@@ -137,14 +137,12 @@ def muon_weight(self: Producer, events: ak.Array, do_syst: bool,  **kwargs) -> a
                 pt =  flat_np_view(muon.pt,axis=1)
                 pt = ak.where(events.all_triggers_id == 132, pt, 26)
                 pt = flat_np_view(pt)
-                eta =  flat_np_view(abs(muon.eta),axis=1)
-                year_trigger = self.config_inst.x.muon_sf.Data_eff.year
-                path_trigger = self.config_inst.x.muon_sf.Data_eff.path     
+                eta =  flat_np_view(abs(muon.eta),axis=1) 
                 O_mu = (pt > 26) & (abs(eta)<2.4)
                 #Prepare a tuple with the inputs of the correction evaluator
                 mu_sf_args = lambda syst : (eta,pt,syst)
                 
-                muon_sf_args_trigger_eff = lambda syst : (year_trigger,syst,path_trigger,pt,eta)
+                muon_sf_args_trigger_eff = lambda syst : (eta,pt,syst)
                 #Loop over the shifts and calculate for each shift muon scale factor
                 for the_shift in shifts:
                     flat_sf = ak.ones_like(pt)
@@ -172,13 +170,13 @@ def muon_weight(self: Producer, events: ak.Array, do_syst: bool,  **kwargs) -> a
     for the_shift in shifts: 
         events = set_ak_column_f32(events, f"muon_weight_{rename_systs[the_shift]}", sf_values[the_shift])
     for the_shift in shifts_eff: 
-        events = set_ak_column_f32(events, f"muon_Data_eff_{the_shift}", Data_eff_values[the_shift])
-        events = set_ak_column_f32(events, f"muon_MC_eff_{the_shift}", MC_eff_values[the_shift])
+        events = set_ak_column_f32(events, f"muon_Data_eff_{rename_systs[the_shift]}", Data_eff_values[the_shift])
+        events = set_ak_column_f32(events, f"muon_MC_eff_{rename_systs[the_shift]}", MC_eff_values[the_shift])
     #Setting up and down variations, only stat uncertainties for now
-    events = set_ak_column_f32(events, f"muon_Data_eff_up", Data_eff_values["nom"] + Data_eff_values["stat"])
-    events = set_ak_column_f32(events, f"muon_Data_eff_down", Data_eff_values["nom"] - Data_eff_values["stat"])
-    events = set_ak_column_f32(events, f"muon_MC_eff_up", MC_eff_values["nom"] + MC_eff_values["stat"])
-    events = set_ak_column_f32(events, f"muon_MC_eff_down", MC_eff_values["nom"] - MC_eff_values["stat"])
+    events = set_ak_column_f32(events, f"muon_Data_eff_up", Data_eff_values["systup"])
+    events = set_ak_column_f32(events, f"muon_Data_eff_down", Data_eff_values["systdown"])
+    events = set_ak_column_f32(events, f"muon_MC_eff_up", MC_eff_values["systup"])
+    events = set_ak_column_f32(events, f"muon_MC_eff_down", MC_eff_values["systdown"])
 
 
     return events
@@ -210,16 +208,15 @@ def muon_weight_setup(
     #self.muon_trig = correction_set[self.config_inst.x.muon_sf.trig.corrector]
 
     # 1) load the JSON file into a Python dict
-    muon_corr = bundle.files.muon_correction_eff.load(formatter="json")
+    muon_corr = bundle.files.HLT_mu_eff.load(formatter="json")
 
     # 2) serialize the dict back to a JSON string
     muon_json = json.dumps(muon_corr)
 
     # 3) build your CorrectionSet
     correction_set_trig = correctionlib.CorrectionSet.from_string(muon_json)
-    
-    self.muon_trig_Data_eff = correction_set_trig[self.config_inst.x.muon_sf.Data_eff.corrector]
-    self.muon_trig_MC_eff = correction_set_trig[self.config_inst.x.muon_sf.MC_eff.corrector]
+    self.muon_trig_Data_eff = correction_set_trig[self.config_inst.x.muon_sf.trig_data_eff.corrector]
+    self.muon_trig_MC_eff = correction_set_trig[self.config_inst.x.muon_sf.trig_mc_eff.corrector]
 
 # ### ELECTRON WEIGHT CALCULATOR ##
 @producer(
@@ -270,7 +267,7 @@ def electron_weight(self: Producer, events: ak.Array, do_syst: bool,  **kwargs) 
                 eta           = flat_np_view(electron.eta,axis=1)
                 phi           = flat_np_view(electron.phi,axis=1)
                 pt_20_mask    = flat_np_view(electron.pt < 20)
-                pt_20_75_mask = flat_np_view( (electron.pt >= 20) & (electron.pt < 75))
+                pt_20_75_mask = flat_np_view((electron.pt >= 20) & (electron.pt < 75))
                 pt_75_mask    = flat_np_view(electron.pt >= 75)
                 pt_20         = flat_np_view(ak.where(pt_20_mask,pt,19))
                 pt_20_75      = flat_np_view(ak.where(pt_20_75_mask,pt,21))
@@ -370,8 +367,7 @@ def electron_weight_setup(
 ################################
 @producer(
     uses={
-        'event'
-    },
+        'event', 'triggerID*'},
     produces={
          f"Trigger_SF_{shift}"
         for shift in ["nom", "up", "down"]
@@ -396,25 +392,55 @@ def trigger_sf(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     muon_MC_eff_down  = events.muon_MC_eff_down
     electron_MC_eff_down = events.electron_MC_eff_down
     
+    # Define triggers passed masks
+    Pass_mu_trig = ak.where(events.triggerID_mu > 0, 1, 0)
+    Pass_e_trig  = ak.where(events.triggerID_e >  0, 1, 0)
+    
     # SF evaluation
     # nom 
-    eff_data      = 1 - (1 - muon_Data_eff_nom)*(1 - electron_Data_eff_nom) 
-    eff_MC        = 1 - (1 - muon_MC_eff_nom)*(1 - electron_MC_eff_nom) 
-    SF_nom        =  eff_data/eff_MC
-    # up
-    eff_data_up   = 1 - (1 - muon_Data_eff_up)*(1 - electron_Data_eff_up) 
-    eff_MC_up     = 1 - (1 - muon_MC_eff_up)*(1 - electron_MC_eff_up) 
-    SF_up         =  eff_data_up/eff_MC_up
-    # down 
-    eff_data_down = 1 - (1 - muon_Data_eff_down)*(1 - electron_Data_eff_down) 
-    eff_MC_down   = 1 - (1 - muon_MC_eff_down)*(1 - electron_MC_eff_down) 
-    SF_down       =  eff_data_down/eff_MC_down
+    eff_data  = Pass_mu_trig*muon_Data_eff_nom + Pass_e_trig*electron_Data_eff_nom - Pass_mu_trig*muon_Data_eff_nom*Pass_e_trig*electron_Data_eff_nom
+    eff_MC  = Pass_mu_trig*muon_MC_eff_nom + Pass_e_trig*electron_MC_eff_nom - Pass_mu_trig*muon_MC_eff_nom*Pass_e_trig*electron_MC_eff_nom
+    
+    SF_nom =  eff_data/eff_MC
+    
+    deff_data_delectron_Data_eff_nom = Pass_e_trig  - Pass_e_trig*Pass_mu_trig*muon_Data_eff_nom
+    deff_data_dmuon_Data_eff_nom     = Pass_mu_trig - Pass_e_trig*Pass_mu_trig*electron_Data_eff_nom
+    
+    delta_el_data = (electron_Data_eff_up - electron_Data_eff_nom)
+    delta_mu_data = (muon_Data_eff_up - muon_Data_eff_nom)
+    
+    deff_data = deff_data_delectron_Data_eff_nom*delta_el_data + deff_data_dmuon_Data_eff_nom*delta_mu_data
+    
+    deff_data_rel = deff_data/eff_data 
+    
+    deff_MC_delectron_MC_eff_nom = Pass_e_trig  - Pass_e_trig*Pass_mu_trig*muon_MC_eff_nom
+    deff_MC_dmuon_MC_eff_nom     = Pass_mu_trig - Pass_e_trig*Pass_mu_trig*electron_MC_eff_nom
+    
+    delta_el_MC = (electron_MC_eff_up - electron_MC_eff_nom)
+    delta_mu_MC = (muon_MC_eff_up - muon_MC_eff_nom)
+    
+    deff_MC = deff_MC_delectron_MC_eff_nom*delta_el_MC + deff_MC_dmuon_MC_eff_nom*delta_mu_MC
+    
+    deff_MC_rel = deff_MC/eff_MC 
+    
+    delta_SF = SF_nom*np.sqrt(deff_MC_rel**2 + deff_data_rel**2)
+    
+        # # up
+    # eff_data_up  = Pass_mu_trig*muon_Data_eff_up + Pass_e_trig*electron_Data_eff_up - Pass_mu_trig*muon_Data_eff_up*Pass_e_trig*electron_Data_eff_up
+    # eff_MC_up  = Pass_mu_trig*muon_MC_eff_up + Pass_e_trig*electron_MC_eff_up - Pass_mu_trig*muon_MC_eff_up*Pass_e_trig*electron_MC_eff_up
+    # SF_up         =  eff_data_up/eff_MC_up
+    # # down 
+    # eff_data_down = Pass_mu_trig*muon_Data_eff_down + Pass_e_trig*electron_Data_eff_down - Pass_mu_trig*muon_Data_eff_down*Pass_e_trig*electron_Data_eff_down
+    # eff_MC_down   = Pass_mu_trig*muon_MC_eff_down + Pass_e_trig*electron_MC_eff_down - Pass_mu_trig*muon_MC_eff_down*Pass_e_trig*electron_MC_eff_down
+    # SF_down       =  eff_data_down/eff_MC_down
+
     #Saving the columns 
     events = set_ak_column_f32(events, f"Trigger_SF_nom", SF_nom)
-    events = set_ak_column_f32(events, f"Trigger_SF_up", SF_up)
-    events = set_ak_column_f32(events, f"Trigger_SF_down", SF_down)
-    
+    events = set_ak_column_f32(events, f"Trigger_SF_up", SF_nom + delta_SF )
+    events = set_ak_column_f32(events, f"Trigger_SF_down", SF_nom - delta_SF)
+
     return events
+
 
 ### TAU WEIGHT CALCULATOR ###
 
@@ -554,4 +580,3 @@ def tau_weight_setup(
     self.id_vs_jet_corrector    = correction_set[f"{tagger_name}VSjet"]
     self.id_vs_e_corrector      = correction_set[f"{tagger_name}VSe"]
     self.id_vs_mu_corrector     = correction_set[f"{tagger_name}VSmu"]
-
