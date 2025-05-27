@@ -978,6 +978,24 @@ def add_run3(ana: od.Analysis,
                       'wj_incl_madgraph' : "LO"},
     })
     
+    cfg.x.fake_fact or_method = DotDict.wrap({
+    "axes": {'tau_pt': {
+                'var_route': [f'hcand_{channel}', 'lep1', 'pt'],
+                'ax_str'  : 'Variable([20,30,40,60,80,200], name="tau_pt", label="Tau pt", underflow=False, overflow=False)',
+                },
+             'tau_dm_pnet': {
+                'var_route' : [f'hcand_{channel}', 'lep1', 'decayModePNet'],
+                'ax_str'   :'IntCategory([0,1,2,10,11], name="tau_dm_pnet", label="Tau PNet decayMode")',
+             },
+             "n_jets": {
+                'var_route' : ['n_jets'],
+                'ax_str'   : 'Integer(0, 3, name="n_jets", label="Number of jets",underflow=False, overflow=False)',
+            },
+    },
+    "columns" : ['ff_weight_wj','ff_weight_qcd'],
+    "shifts"  : ["up", "nominal", "down"]
+    })   
+    
     if cfg.campaign.x("custom").get("creator") == "desy":  
         def get_dataset_lfns(dataset_inst: od.Dataset, shift_inst: od.Shift, dataset_key: str) -> list[str]:
             # destructure dataset_key into parts and create the lfn base directory
@@ -1016,4 +1034,4 @@ def add_run3(ana: od.Analysis,
 
 
     
-    
+        
