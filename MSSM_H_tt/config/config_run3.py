@@ -978,7 +978,7 @@ def add_run3(ana: od.Analysis,
                       'wj_incl_madgraph' : "LO"},
     })
     
-    cfg.x.fake_fact or_method = DotDict.wrap({
+    cfg.x.fake_factor_method = DotDict.wrap({
     "axes": {'tau_pt': {
                 'var_route': [f'hcand_{channel}', 'lep1', 'pt'],
                 'ax_str'  : 'Variable([20,30,40,60,80,200], name="tau_pt", label="Tau pt", underflow=False, overflow=False)',
@@ -1030,8 +1030,5 @@ def add_run3(ana: od.Analysis,
     add_variables(cfg)
     
     from data_driven.hist_hooks import add_hist_hooks # commond method for data_driven estimation, MSSM should only use good_old_abcd
-    add_hist_hooks(cfg)  
-
-
-    
+    add_hist_hooks(cfg)
         
