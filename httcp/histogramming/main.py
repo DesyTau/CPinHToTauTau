@@ -14,9 +14,11 @@ from columnflow.columnar_util import Route
 from columnflow.util import maybe_import, pattern_matcher
 from columnflow.columnar_util import EMPTY_FLOAT
 from columnflow.types import Any
+
+
 np = maybe_import('numpy')
 ak = maybe_import('awkward')
-hist = maybe_import('hist')
+
 
 @cf_default.hist_producer(keep_weights=None, skip_compatibility_check=True, drop_weights={"normalization_weight_inclusive"})
 def default(self: HistProducer, events: ak.Array, **kwargs) -> ak.Array:
@@ -114,3 +116,35 @@ def default_post_process_hist(self: HistProducer, h_dict: dict, task: law.Task) 
     print("postprocess:", hist)    
     return hist
 
+
+@default.post_process_merged_hist
+def post_process_merged_hist_func(self: HistProducer, h_dict: dict, task: law.Task) -> None:
+    """
+    Post-process the merged histogram, adding the category axis .
+    """
+    hist = maybe_import("hist")
+    category_labels = [str(cat.name) for cat in h_dict.keys()]
+    first_hist = next(iter(h_dict.values()))
+    axes = list(first_hist.axes)
+    # Add a categorical axis for the categories
+    cat_axis = hist.axis.StrCategory(category_labels, name="category")
+    # Build a new histogram with the extra axis
+    new_axes = axes + [cat_axis]
+    combined_hist = hist.Hist(*new_axes)
+    for cat, h in h_dict.items():
+        dummy_fill = [ax[0] if ax.name != 'category' else cat.name for ax in h.axes]
+        dummy_fill.append(cat.name)
+        combined_hist.fill(*dummy_fill, weight=0)
+        # TODO: this might skip overflow and underflow bins
+        combined_hist[{'category': hist.loc(cat.name)}] = h.view()
+
+ #   for i, (cat, hcat) in enumerate(h_dict.items()):
+        # Fill the combined histogram with the data from each category
+      #  print(hcat.view())
+        #combined_hist[{"category": cat.name}] = hcat.view() 
+    #print(combined_hist)   
+
+    print(h_dict)
+
+            #combined_hist[{"category": hist.loc(cat.name)}] = hcat.view()
+ 
