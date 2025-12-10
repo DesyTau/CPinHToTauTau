@@ -3,25 +3,25 @@ Column production methods related to higher-level features.
 """
 import functools
 
-from typing import Optional
 from columnflow.production import Producer, producer
 from columnflow.production.categories import category_ids
 from columnflow.production.normalization import normalization_weights
 from columnflow.production.cms.pileup import pu_weight
+from columnflow.reduction.util import create_collections_from_masks
 from columnflow.production.cms.seeds import deterministic_seeds
-from columnflow.selection.util import create_collections_from_masks
+from columnflow.reduction.util import create_collections_from_masks
 from columnflow.util import maybe_import
 from columnflow.columnar_util import EMPTY_FLOAT, Route, set_ak_column
 from columnflow.columnar_util import optional_column as optional
 from columnflow.production.util import attach_coffea_behavior
 
-from MSSM_H_tt.production.weights import muon_weight, tau_weight, get_mc_weight, zpt_weight, electron_weight, trigger_sf
+from MSSM_H_tt.production.weights import muon_weight, tau_weight, get_mc_weight, electron_weight, trigger_sf #zpt_weight
 from MSSM_H_tt.production.sample_split import split_dy
 from MSSM_H_tt.production.generatorZ import generatorZ
 from MSSM_H_tt.production.dilepton_features import hcand_fields,hcand_mt
-
+from MSSM_H_tt.production.z_pt_reweighting import zpt_weight
 from MSSM_H_tt.production.aux_columns import jet_pt_def,jets_taggable,number_b_jet
-from MSSM_H_tt.production.btag_SF import btag_weight_SF
+from columnflow.production.cms.btag import btag_weights
 from MSSM_H_tt.production.top_pt_weight import top_pt_weight, gen_parton_top
 from MSSM_H_tt.production.D_zeta import D_zeta
 from MSSM_H_tt.production.met_recoil_correction import gen_boson, met_recoil
@@ -59,7 +59,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         number_b_jet,
         jet_pt_def,
         jets_taggable,
-        btag_weight_SF,
+        btag_weights,
         gen_parton_top,
         top_pt_weight,
         D_zeta,
@@ -91,7 +91,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         number_b_jet,
         jet_pt_def,
         jets_taggable,
-        btag_weight_SF,
+        btag_weights,
         gen_parton_top,
         top_pt_weight,
         D_zeta,
@@ -165,7 +165,11 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         print("Producing Tau weights...")
         events = self[tau_weight](events,do_syst = True, **kwargs)
         print("Producing btag weights...")
-        events = self[btag_weight_SF](events,do_syst = True,**kwargs)
+        jet_mask = ((events.Jet.pt >= 20) & 
+                    (abs(events.Jet.eta) < 2.5) & 
+                    (events.Jet.jetId & 0b10 == 0b10))
+        events = self[btag_weights](events,jet_mask= jet_mask,**kwargs)
+        # events = self[btag_weight_SF](events,do_syst = True,**kwargs)
         print("Producing GenPartonTop...")
         events = self[gen_parton_top](events, **kwargs)
         top_pt_weight_dummy = ak.where(events.GenPartonTop.pt > 500.0, 500.0, events.GenPartonTop.pt)
@@ -175,11 +179,11 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         if (dataset_inst := getattr(self, "dataset_inst", None)) and dataset_inst.has_tag("ttbar"):
             print("Producing Top pT weights...")
             events = self[top_pt_weight](events, **kwargs)
-        # if self.dataset_inst.name in self.config_inst.x.stitch_DYto2L_samples:
-        #     print("Producing stitching weights...")
-        #     events = self[stitching_weight](events,**kwargs)
-        # else:
-        events = set_ak_column_f32(events,"stitching_weights",ak.ones_like(events.event, dtype=np.float32))
+        if self.dataset_inst.name in self.config_inst.x.stitch_samples:
+            print("Producing stitching weights...")
+            events = self[stitching_weight](events,**kwargs)
+        else:
+            events = set_ak_column_f32(events,"stitching_weight",ak.ones_like(events.event, dtype=np.float32))
             
     return events
     

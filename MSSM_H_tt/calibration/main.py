@@ -4,9 +4,11 @@ Calibration methods.
 import functools
 
 from columnflow.calibration import Calibrator, calibrator
+# from columnflow.calibration.cms.jets import jec
 from MSSM_H_tt.calibration.jets import jec
 from MSSM_H_tt.calibration.met import met_phi
 from MSSM_H_tt.calibration.tau import tau_energy_scale
+# from columnflow.calibration.cms.egamma import electrons
 from MSSM_H_tt.calibration.electron import electron_smearing_scaling
 from columnflow.production.cms.seeds import deterministic_seeds
 from columnflow.util import maybe_import
@@ -32,7 +34,6 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
 def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     
     events = self[deterministic_seeds](events, **kwargs)
-    
     non_finite_mask = ~np.isfinite(events.PuppiMET.pt)
     
     #Jets variables before applying energy corrections
@@ -45,13 +46,14 @@ def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     #PuppiMET variables before applying energy corrections
     events = set_ak_column_f32(events, "PuppiMET.pt_no_jec", events.PuppiMET.pt)
     events = set_ak_column_f32(events, "PuppiMET.phi_no_jec", events.PuppiMET.phi)
-
+    
     print("Performing Jet Energy Correction...")
     events = self[jec](events, **kwargs)
     events = set_ak_column_f32(events, "Electron.pt_no_scaling_smearing", events.Electron.pt)
     
     if self.config_inst.x.year==2022: # scaling and smearing is not available for 2023
         print("Performing electron scaling and smearing correction...")
+        # events = self[electrons](events, **kwargs)
         events = self[electron_smearing_scaling](events, **kwargs)
         print("Electron scaling and smearing correction...SUCCEDED")
     #events = self[met_phi](events, **kwargs)
