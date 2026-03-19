@@ -13,7 +13,7 @@ from columnflow.util import maybe_import
 from columnflow.columnar_util import EMPTY_FLOAT, Route, set_ak_column
 from columnflow.columnar_util import optional_column as optional
 from columnflow.production.util import attach_coffea_behavior
-from columnflow.production.cms.btag import btag_weights
+# from columnflow.production.cms.btag import btag_weights
 
 from MSSM_H_tt.production.pileup import pu_weight
 from MSSM_H_tt.production.weights import muon_weight, tau_weight, get_mc_weight, electron_weight, trigger_sf 
@@ -30,7 +30,8 @@ from MSSM_H_tt.production.bdt_score import mssm_bdt_score
 from MSSM_H_tt.production.fastMTT import fastMTT
 from MSSM_H_tt.production.pt_H import pt_H
 from MSSM_H_tt.production.stitching_weights import stitching_weight
-#from MSSM_H_tt.production.DY_recoil_unc import DY_pTll_recoil_unc
+from MSSM_H_tt.production.unclustered_PuppiMET_weight import unclustered_weight
+
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
 coffea = maybe_import("coffea")
@@ -61,7 +62,6 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         create_jetID_masks,
         jet_pt_def,
         jets_taggable,
-        btag_weights,
         btag_weight_SF,
         gen_parton_top,
         top_pt_weight,
@@ -73,7 +73,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         fastMTT,
         pt_H,
         stitching_weight,
-        #DY_pTll_recoil_unc,
+        unclustered_weight,
         },
     produces={
         "event",
@@ -95,7 +95,6 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         create_jetID_masks,
         jet_pt_def,
         jets_taggable,
-        btag_weights,
         btag_weight_SF,
         gen_parton_top,
         top_pt_weight,
@@ -107,7 +106,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         fastMTT,
         pt_H,
         stitching_weight,
-        #DY_pTll_recoil_unc,     
+        unclustered_weight,     
     },
     # whether weight producers should be added and called
     produce_weights=True,
@@ -170,11 +169,31 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         events = self[trigger_sf](events, **kwargs)
         print("Producing Tau weights...")
         events = self[tau_weight](events,do_syst = True, **kwargs)
-        print("Producing btag weights...")
-        jet_mask = ((events.Jet.pt >= 20) & 
-                    (abs(events.Jet.eta) < 2.5) & 
-                    (events.Jet.jetId & 0b10 == 0b10))
-        events = self[btag_weights](events,jet_mask= jet_mask,**kwargs)
+        print("Producing btag SF fixed WP approach...")
+        year = self.config_inst.x.year
+        tag = self.config_inst.x.tag
+        btag_wp = self.config_inst.x.btag_working_points[year][tag].particleNet.medium
+
+        #Removing NaNs from discriminat
+        dis = events.Jet.btagPNetB 
+        nan_mask = np.isnan(dis)
+        mask = ~np.isnan(dis)
+            
+        Jet = events.Jet[mask]
+
+        # base (b-jet) selection
+        jet_selections = {
+            "jet_pt_20": Jet.pt > 20.0,
+            "jet_eta_2.5": abs(Jet.eta) < 2.5,
+            "jet_id": Jet.pass_tightID_lep_veto,
+            "btag_wp_medium": Jet.btagPNetB >= btag_wp,
+        }
+        jet_obj_mask = ak.ones_like(Jet.pt, dtype=np.bool_)
+        for the_sel in jet_selections.values():
+            jet_obj_mask = jet_obj_mask & the_sel
+        print("Producing Unclustered PuppiMET weights for systematic uncertainties...")
+        events = self[unclustered_weight](events, **kwargs)
+        print("Producing btag SF weights...")
         events = self[btag_weight_SF](events,do_syst = True,**kwargs)
         print("Producing GenPartonTop...")
         events = self[gen_parton_top](events, **kwargs)

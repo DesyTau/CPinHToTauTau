@@ -86,37 +86,33 @@ def propagate_met(
     jet_py1 = jet_pt1 * np.sin(jet_phi1)
     jet_px2 = jet_pt2 * np.cos(jet_phi2)
     jet_py2 = jet_pt2 * np.sin(jet_phi2)
-
-    # sum over axis 1 when not already done
-    if jet_pt1.ndim > 1:
-        jet_px1 = ak.sum(jet_px1, axis=1)
-        jet_py1 = ak.sum(jet_py1, axis=1)
-    if jet_pt2.ndim > 1:
-        jet_px2 = ak.sum(jet_px2, axis=1)
-        jet_py2 = ak.sum(jet_py2, axis=1)
-    
-    # RawPuppiMET sanity check
-           
-    crazy_PuppiMET_values_mask = met_pt1 > 14*10**3     
-    
-    crazy_PuppiMET_values = met_pt1[crazy_PuppiMET_values_mask]
-    
-    # Get the indices of the infinite values
-    crazy_PuppiMET_indices = np.where(crazy_PuppiMET_values_mask)[0]
-
-    # Count the number of infinite values
-    crazy_PuppiMET_count = ak.sum(crazy_PuppiMET_values_mask)
-    
-    if crazy_PuppiMET_count > 0:
-        # Replace infinite values with 0
-        met_pt1 = ak.where(~crazy_PuppiMET_values_mask, met_pt1, 1000)
-
-        # Raise a warning about the replacement
-        logger.warning(
-            f"Warning: Found and replaced {crazy_PuppiMET_count} crazy value(s) {crazy_PuppiMET_values.tolist()} in 'RawPuppiMET.pt' with 1000.\n"
-            f"Indices in the chuck: {crazy_PuppiMET_indices.tolist()}\n"
-            f"We will get rid of these events in the selection step")
         
+    # RawPuppiMET sanity check
+    crazy_mask = met_pt1 > 14 * 10**3
+
+    crazy_count = int(ak.sum(crazy_mask))
+
+    if crazy_count > 0:
+        crazy_values = ak.to_list(ak.flatten(met_pt1[crazy_mask], axis=None))
+
+        # reduce to an event-level mask before converting to numpy indices
+        crazy_event_mask = crazy_mask
+        while crazy_event_mask.ndim > 1:
+            crazy_event_mask = ak.any(crazy_event_mask, axis=-1)
+
+        crazy_indices = np.nonzero(ak.to_numpy(crazy_event_mask))[0].tolist()
+
+        # replace crazy values with 1000
+        met_pt1 = ak.where(crazy_mask, 1000.0, met_pt1)
+
+        logger.warning(
+            f"Found and replaced {crazy_count} crazy value(s) {crazy_values} "
+            f"in 'RawPuppiMET.pt' with 1000. "
+            f"Event indices in the chunk: {crazy_indices}. "
+            f"These events should be removed in the selection step."
+        )
+
+    
     # propagate to met
     met_px2 = met_pt1 * np.cos(met_phi1) - (jet_px2 - jet_px1)
     met_py2 = met_pt1 * np.sin(met_phi1) - (jet_py2 - jet_py1)
