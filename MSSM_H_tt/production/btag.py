@@ -18,7 +18,7 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
 
 @producer(
     uses={f"Jet.{var}" for var in
-          ["pt", "eta", "phi", "mass", "btagDeepFlavB", "pass_tightID_lep_veto"
+          ["pt", "eta", "phi", "mass", "btagPNetB", "pass_tightID_lep_veto"
            ]},
     produces={
          f"btag_weight_{shift}"
@@ -38,10 +38,10 @@ def btag_weight(
     sf_values = {}
     tag = self.config_inst.x.tag
     year = self.config_inst.x.year
-    btag_wp = self.config_inst.x.btag_working_points[year][tag].deepjet.medium
+    btag_wp = self.config_inst.x.btag_working_points[year][tag].particleNet.medium
 
     #Removing NaNs from discriminat
-    dis = events.Jet.btagDeepFlavB 
+    dis = events.Jet.btagPNetB 
     nan_mask = np.isnan(dis)
     mask = ~np.isnan(dis)
         
@@ -52,16 +52,12 @@ def btag_weight(
         "jet_pt_20": Jet.pt > 20.0,
         "jet_eta_2.5": abs(Jet.eta) < 2.5,
         "jet_id": Jet.pass_tightID_lep_veto,
-        "btag_wp_medium": Jet.btagDeepFlavB >= btag_wp,
+        "btag_wp_medium": Jet.btagPNetB >= btag_wp,
     }
     
     jet_obj_mask = ak.ones_like(Jet.pt, dtype=np.bool_)
     for the_sel in jet_selections.values():
         jet_obj_mask = jet_obj_mask & the_sel
-    # jet_mask = ((events.Jet.pt >= 20) & 
-    #             (abs(events.Jet.eta) < 2.5) & 
-    #             (events.Jet.jetId & 0b10 == 0b10))
-    
 
     for the_shift in shifts: sf_values[the_shift] = np.ones_like(events.event, dtype=np.float32)
     # Create sf array template to make copies and dict for finnal results of all systematics
@@ -69,7 +65,7 @@ def btag_weight(
     flavor = Jet.hadronFlavour
     eta = abs(Jet.eta)
     pt = Jet.pt
-    dis = Jet.btagDeepFlavB
+    dis = Jet.btagPNetB
     
     for the_shift in shifts: sf_values[the_shift] = np.ones_like(events.event, dtype=np.float32)
 
