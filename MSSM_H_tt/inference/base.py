@@ -16,10 +16,29 @@ class HCPModelBase(InferenceModel):
     https://github.com/uhh-cms/hh2bbtautau/blob/master/hbt/inference/base.py
     """
 
+    @classmethod
+    def require_shapes_for_parameter(cls, param_obj) -> bool:
+        """
+        Compatibility shim for newer ColumnFlow task framework.
+        """
+        if param_obj.type.is_shape:
+            # shape built from a rate -> no input varied shapes needed
+            if param_obj.transformations.any_from_rate:
+                return False
+            return True
+
+        if param_obj.type.is_rate:
+            # rate extracted from shapes -> varied shapes are needed
+            if param_obj.transformations.any_from_shape:
+                return True
+            return False
+
+        raise Exception(
+            f"shape requirement cannot be evaluated for parameter '{param_obj.name}' "
+            f"with type '{param_obj.type}' and transformations {param_obj.transformations}"
+        )
+
     def __init__(self, *args, **kwargs) -> None:
-        # members that are set in init_objects
-     
-        self.config = args
         self.single_config: bool
         self.campaign_keys: dict[od.Config, str] = {}
         self.campaign_key: str

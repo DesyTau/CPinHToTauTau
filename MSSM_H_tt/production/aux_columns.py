@@ -98,7 +98,7 @@ def create_jetID_masks(
 
 @producer(
     uses={f"Jet.{var}" for var in
-          ["pt", "eta", "phi", "mass", "btagDeepFlavB", "pass_tightID_lep_veto"
+          ["pt", "eta", "phi", "mass", "btagDeepFlavB", "btagPNetB", "pass_tightID_lep_veto"
            ]} | {"hcand_*"},
     produces={
         "n_jets",
@@ -199,7 +199,7 @@ def jet_pt_def(
 
 @producer(
     uses={f"Jet.{var}" for var in
-          ["pt", "eta", "phi", "mass", "btagDeepFlavB", "pass_tightID_lep_veto"
+          ["pt", "eta", "phi", "mass", "btagDeepFlavB", "btagPNetB", "pass_tightID_lep_veto"
            ]} | {"hcand_*"},
     produces={"n_jets_tag"},
     exposed=False,
@@ -268,7 +268,7 @@ def jets_taggable(
 
 @producer(
     uses={f"Jet.{var}" for var in
-          ["pt", "eta", "phi", "mass", "btagDeepFlavB", "pass_tightID_lep_veto"]} | {"hcand_*"},
+          ["pt", "eta", "phi", "mass", "btagDeepFlavB", "btagPNetB","pass_tightID_lep_veto"]} | {"hcand_*"},
     produces={
         "N_b_jets",
         "lead_b_jet.*",
@@ -291,7 +291,7 @@ def number_b_jet(
     """
     year = self.config_inst.x.year
     tag = self.config_inst.x.tag
-    btag_wp = self.config_inst.x.btag_working_points[year][tag].deepjet.medium
+    btag_wp = self.config_inst.x.btag_working_points[year][tag].particleNet.medium
 
     # sort jets by pt
     jet_pt_sorted_idx = ak.argsort(events.Jet.pt, axis=1, ascending=False)
@@ -302,7 +302,7 @@ def number_b_jet(
         "jet_pt_20": sorted_jets.pt > 20.0,
         "jet_eta_2.5": abs(sorted_jets.eta) < 2.5,
         "jet_id": sorted_jets.pass_tightID_lep_veto,
-        "btag_wp_medium": sorted_jets.btagDeepFlavB >= btag_wp,
+        "btag_wp_medium": sorted_jets.btagPNetB >= btag_wp,
     }
     jet_obj_mask = ak.ones_like(jet_pt_sorted_idx, dtype=np.bool_)
     for the_sel in jet_selections.values():

@@ -104,6 +104,7 @@ class hcp_model(HCPModelBase):
                 data_datasets.append(the_dataset)
 
         MASS_POINTS = read_bdt_masses()
+        MASS_POINTS = [100]
         for mass in MASS_POINTS:
             self.add_category(
                 f"cat_emu_sr__bdt_ggh_M{mass}",

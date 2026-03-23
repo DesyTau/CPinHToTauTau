@@ -253,9 +253,8 @@ def _bdt_cat_mass(self: Categorizer, events: ak.Array, cat_id: int, mass: int, *
 
 from MSSM_H_tt.config.mass_points import read_bdt_masses
 MASS_POINTS = read_bdt_masses()
-
 # must match the class ordering used in the BDT (0..3)
-BDT_CLASS_LABELS = ["ggh", "bbh", "dy", "tt"]  # "wj", "st", "mb"
+BDT_CLASS_LABELS = ["ggh", "bbh", "dy", "tt"] 
 
 for mass in MASS_POINTS:
   for cat_id, the_name in enumerate(BDT_CLASS_LABELS):
