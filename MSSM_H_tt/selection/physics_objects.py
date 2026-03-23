@@ -381,7 +381,7 @@ def tau_selection(
     uses={ f"Jet.{var}" for var in 
         [
             "pt", "eta", "phi", "mass",
-            "jetId", "btagDeepFlavB",
+            "jetId", "btagPNetB",
         ]} | {optional("Jet.puId")} ,
     exposed=False,
 )
@@ -422,8 +422,8 @@ def jet_selection(
     good_jet_indices = ak.values_astype(good_jet_indices, np.int32)
 
     # b-tagged jets, tight working point
-    btag_wp = self.config_inst.x.btag_working_points[year].deepjet.medium
-    b_jet_mask = jet_mask & (events.Jet.btagDeepFlavB >= btag_wp)
+    btag_wp = self.config_inst.x.btag_working_points[year].particleNet.medium
+    b_jet_mask = jet_mask & (events.Jet.btagPNetB >= btag_wp)
     selection_steps["btag"] = ak.fill_none(b_jet_mask, False)
 
     # bjet veto

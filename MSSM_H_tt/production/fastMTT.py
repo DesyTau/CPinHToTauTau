@@ -45,8 +45,7 @@ logger = law.logger.get_logger(__name__)
     uses={
         # nano columns
         'event',
-        'hcand_*',
-        'PuppiMET*', #here : change from PuppiMET.pt, PuppiMET.phi, PuppiMET.covXX, PuppiMET.covXY, PuppiMET.covYY
+        'PuppiMET.pt', 'PuppiMET.phi', 'PuppiMET.covXX', 'PuppiMET.covXY', 'PuppiMET.covYY'
     },
     produces={
         # new columns

@@ -4,7 +4,7 @@
 Producers for the TauTheDifference BDT for signal vs. background separation of the Higgs MSSM analysis.
 Now supports multiple mass points: one even/odd model per mass, producing per-mass outputs.
 
-Updated for 7-class training:
+Updated for 4-class training:
   0: ggH_tautau  -> "ggh"
   1: bbH_tautau  -> "bbh"
   2: DY          -> "dy"

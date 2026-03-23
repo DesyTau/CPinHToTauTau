@@ -19,6 +19,8 @@ from columnflow.config_util import (
     verify_config_processes,get_shifts_from_sources
 )
 
+from cmsdb.processes.qcd import qcd as qcd_proc
+
 ak = maybe_import("awkward")
 
 def add_run3(ana: od.Analysis,
@@ -154,6 +156,7 @@ def add_run3(ana: od.Analysis,
         "wph_htt_flat",
         "wmh_htt_flat",
         # W + jets
+        "w",
         "wj",
         "wj_1j",
         "wj_2j",
@@ -184,6 +187,9 @@ def add_run3(ana: od.Analysis,
         #for signal datasets create special tag
         if process_name.startswith("h_"):
             proc.add_tag("signal")
+        # add data-driven QCD process explicitly (no datasets attached)
+        if "qcd" not in cfg.processes.names():
+            cfg.add_process(qcd_proc)
            
     # add datasets we need to study
     dataset_names_2022preEE = [
@@ -452,7 +458,7 @@ def add_run3(ana: od.Analysis,
 
     # verify that the root process of all datasets is part of any of the registered processes
     verify_config_processes(cfg, warn=True)
-
+   
     #Adding the triggers 
 
     from MSSM_H_tt.config.triggers import add_triggers_run3
@@ -566,6 +572,7 @@ def add_run3(ana: od.Analysis,
                             "bbh_htt_2000","bbh_htt_2300","bbh_htt_2600",
                             "bbh_htt_2900","bbh_htt_3200","bbh_htt_3500"
                             ],
+         "qcd": ["qcd"],
         }
 
     # dataset groups for conveniently looping over certain datasets
@@ -593,93 +600,7 @@ def add_run3(ana: od.Analysis,
     # (currently set to false because the number of files per dataset is truncated to 2)
     cfg.x.validate_dataset_lfns = False
     
-    # # jec configuration
-    # # https://twiki.cern.ch/twiki/bin/view/CMS/JECDataMC?rev=201
-    # jerc_postfix = ""
-    # if year == 2016 and campaign.x.vfp == "post":
-    #     jerc_postfix = "APV"
-    # elif year == 2022 and campaign.x.tag == "postEE":
-    #     jerc_postfix = "EE"
-    
-    # elif year == 2023 and campaign.x.tag == "postBPix":
-    #     jerc_postfix = "BPix"
-    # jet_type = "AK4PFPuppi"
-    # if year < 2022:
-    #     jerc_campaign = f"Summer19UL{year2}{jerc_postfix}"
-    #     jet_type = "AK4PFchs"
-    # elif year==2022:
-    #     jerc_campaign = f"Summer{year2}{jerc_postfix}_22Sep2023"
-    #     jet_type = "AK4PFPuppi"
-    # elif year==2023:
-    #     jerc_campaign = f"Summer{year2}{jerc_postfix}Prompt23"
-        
-    # cfg.x.jec = DotDict.wrap({
-    #     "campaign": jerc_campaign,
-    #      "version": {2016: "V7", 2017: "V5", 2018: "V5", 2022: "V2", 2023:"V1"}[year],
-    #     "jet_type": jet_type,
-    #     "levels_DATA": ["L1L2L3Res"], #"L2Relative", "L2L3Residual", "L3Absolute", "L1L2L3Res" 
-    #     "levels_MC": ["L1L2L3Res"], 
-    #     "levels_for_type1_met": ["L1L2L3Res"], 
-    #     "uncertainty_sources": [
-    #         # "AbsoluteStat",
-    #         # "AbsoluteScale",
-    #         # "AbsoluteSample",
-    #         # "AbsoluteFlavMap",
-    #         # "AbsoluteMPFBias",
-    #         # "Fragmentation",
-    #         # "SinglePionECAL",
-    #         # "SinglePionHCAL",
-    #         # "FlavorQCD",
-    #         # "TimePtEta",
-    #         # "RelativeJEREC1",
-    #         # "RelativeJEREC2",
-    #         # "RelativeJERHF",
-    #         # "RelativePtBB",
-    #         # "RelativePtEC1",
-    #         # "RelativePtEC2",
-    #         # "RelativePtHF",
-    #         # "RelativeBal",
-    #         # "RelativeSample",
-    #         # "RelativeFSR",
-    #         # "RelativeStatFSR",
-    #         # "RelativeStatEC",
-    #         # "RelativeStatHF",
-    #         # "PileUpDataMC",
-    #         # "PileUpPtRef",
-    #         # "PileUpPtBB",
-    #         # "PileUpPtEC1",
-    #         # "PileUpPtEC2",
-    #         # "PileUpPtHF",
-    #         # "PileUpMuZero",
-    #         # "PileUpEnvelope",
-    #         # "SubTotalPileUp",
-    #         # "SubTotalRelative",
-    #         # "SubTotalPt",
-    #         # "SubTotalScale",
-    #         # "SubTotalAbsolute",
-    #         # "SubTotalMC",
-    #         "Total",
-    #         # "TotalNoFlavor",
-    #         # "TotalNoTime",
-    #         # "TotalNoFlavorNoTime",
-    #         # "FlavorZJet",
-    #         # "FlavorPhotonJet",
-    #         # "FlavorPureGluon",
-    #         # "FlavorPureQuark",
-    #         # "FlavorPureCharm",
-    #         # "FlavorPureBottom",
-    #         # # "TimeRunA",
-    #         # # "TimeRunB",
-    #         # # "TimeRunC",
-    #         # # "TimeRunD",
-    #         # "CorrelationGroupMPFInSitu",
-    #         # "CorrelationGroupIntercalibration",
-    #         # "CorrelationGroupbJES",
-    #         # "CorrelationGroupFlavor",
-    #         # "CorrelationGroupUncorrelated",
-    #     ],
-    # })
-
+ 
     ################################################################################################
     # jet settings
     # TODO: keep a single table somewhere that configures all settings: btag correlation, year
@@ -794,8 +715,9 @@ def add_run3(ana: od.Analysis,
             "version": jec_version,
             "data_per_era": year == 2022,  # 2022 JEC has the era in the correction set name
             "jet_type": jet_type,
-            "levels": ["L1L2L3Res"], #["L1FastJet", "L2Relative", "L2L3Residual", "L3Absolute"],
-            "levels_for_type1_met": ["L1L2L3Res"], # ["L1FastJet"],
+            "levels_MC": ["L1FastJet", "L2Relative", "L3Absolute"], 
+            "levels_DATA": ["L1FastJet", "L2Relative","L3Absolute", "L2L3Residual"],
+            "levels_for_type1_met": ["L1FastJet"], 
             "uncertainty_sources": [src for src, flag in all_jec_sources.items() if flag],
         },
     })
@@ -861,11 +783,10 @@ def add_run3(ana: od.Analysis,
     # met settings
     ################################################################################################
 
-
     if run == 3:
         cfg.x.met_name = "PuppiMET"
         cfg.x.raw_met_name = "RawPuppiMET"
-        
+     
     # ##################################
     # # Parameters fot top pT reweight #
     # ##################################
@@ -878,29 +799,6 @@ def add_run3(ana: od.Analysis,
             "b_up": -0.0005 * 1.5,
             "b_down": -0.0005 * 0.5,
         }
-    # top pt reweighting
-    # https://twiki.cern.ch/twiki/bin/view/CMS/TopPtReweighting?rev=31
-    # theory-based method preferred
-    # from MSSM_H_tt.production.top_pt_weight import TopPtWeightFromTheoryConfig
-    # cfg.x.top_pt_weight = TopPtWeightFromTheoryConfig(params={
-    #     "a": 0.103,
-    #     "b": -0.0118,
-    #     "c": -0.000134,
-    #     "d": 0.973,
-    # })
-    # data-based method preferred
-    # from columnflow.production.cms.top_pt_weight import TopPtWeightFromDataConfig
-    # cfg.x.top_pt_weight = TopPtWeightFromDataConfig(
-    #     params={
-    #         "a": 0.0615,
-    #         "a_up": 0.0615 * 1.5,
-    #         "a_down": 0.0615 * 0.5,
-    #         "b": -0.0005,
-    #         "b_up": -0.0005 * 1.5,
-    #         "b_down": -0.0005 * 0.5,
-    #     },
-    #     pt_max=500.0,
-    # )
 
 
    ################################################################################################
@@ -984,7 +882,10 @@ def add_run3(ana: od.Analysis,
 # b tagging
 ################################################################################################
     # name of the btag_sf correction set and jec uncertainties to propagate through
-    cfg.x.btag_sf = ("deepJet_shape", cfg.x.btag_sf_jec_sources)
+    if year >= 2022:
+        cfg.x.btag_sf = ("particleNet_shape", cfg.x.btag_sf_jec_sources)
+    else:     
+        cfg.x.btag_sf = ("deepJet_shape", cfg.x.btag_sf_jec_sources)
 
     cfg.x.btag_working_points = DotDict.wrap(
             {   2022 : {
@@ -1129,17 +1030,29 @@ def add_run3(ana: od.Analysis,
     ]
 
     from columnflow.production.cms.btag import BTagSFConfig
+    # cfg.x.btag_sf_rpt = BTagSFConfig(
+    #     correction_set="robustParticleTransformer_shape",
+    #     jec_sources=cfg.x.btag_sf_jec_sources,
+    #     discriminator="btagRobustParTAK4B",
+    # )
+
     cfg.x.btag_sf_deepjet = BTagSFConfig(
         correction_set="deepJet_shape",
         jec_sources=cfg.x.btag_sf_jec_sources,
         discriminator="btagDeepFlavB",
     )
-    if year >= 2022:
-        cfg.x.btag_sf_pnet = BTagSFConfig(
+
+    cfg.x.btag_sf_pnet = BTagSFConfig(
             correction_set="particleNet_shape",
             jec_sources=cfg.x.btag_sf_jec_sources,
             discriminator="btagPNetB",
         )   
+        
+    cfg.x.btag_eff_maps = DotDict.wrap({
+        "tagger": "particleNet", 
+        "wp": "medium",
+        "event_weight_column": "normalization_weight",
+        })
     ################################################################################################
     # json file paths
     ################################################################################################       
@@ -1151,6 +1064,7 @@ def add_run3(ana: od.Analysis,
     #CMS Analysis Corrections Documentation: https://cms-analysis-corrections.docs.cern.ch/
     json_acd_path="/cvmfs/cms-griddata.cern.ch/cat/metadata/" 
     sz_path = "/afs/cern.ch/user/d/dmroy/public/ZpT_RecCorr_V5"
+    btag_eff_path = "/afs/cern.ch/user/j/jmalvaso/public/cf.CreateBTagEfficiencyMaps"
     golden_ls = { 
         2022 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions22/Cert_Collisions2022_355100_362760_Golden.json", 
         2023 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions23/Cert_Collisions2023_366442_370790_Golden.json"
@@ -1168,11 +1082,11 @@ def add_run3(ana: od.Analysis,
         "electron_idiso"           : f"{json_acd_path}EGM/{json_acd_tag}/latest/electron.json.gz",
         "electron_trigger"         : f"{json_acd_path}EGM/{json_acd_tag}/latest/electronHlt.json.gz",
         "tau_correction"           : f"{json_acd_path}TAU/{json_acd_tag}/latest/tau.json.gz", #tau_DeepTau2018v2p5_{cfg.x.year}_{tau_tag}
-        "zpt_weight"              : (f"{corr_dir}dy_ptll/DY_pTll_weights_{cfg.x.year}{campaign.x.tag}.json.gz","v2"),
-        #"jet_jerc"                 : (f"{jsonpog_dir}JME/{cfg.x.year}_{tag}/jet_jerc.json.gz", "v2"),
+        "zpt_weight"               : (f"{corr_dir}dy_ptll/DY_pTll_weights_{cfg.x.year}{campaign.x.tag}.json.gz","v2"),
         "jet_jerc"                 : (f"{json_acd_path}JME/{json_acd_tag}/latest/jet_jerc.json.gz", "v2"),
         "jet_veto_map"             : (f"{json_acd_path}JME/{json_acd_tag}/latest/jetvetomaps.json.gz", "v2"),
         "btag_sf_corr"             : (f"{json_acd_path}BTV/{json_acd_tag}/latest/btagging.json.gz", "v2"),
+        "btag_eff_corr"            : (f"{btag_eff_path}/btag_eff_maps_emu_{cfg.x.year}_{campaign.x.tag}.json", "v2"),
         "met_recoil"               : (f"{corr_dir}dy_ptll/Recoil_corrections_{cfg.x.year}{campaign.x.tag}.json.gz", "v2"),
     })
     #/eos/user/a/anigamov/htt_corrections_mirror/dy_ptll'
@@ -1273,6 +1187,10 @@ def add_run3(ana: od.Analysis,
     cfg.add_shift(name="pu_weight_down", id=16, type="shape")
     cfg.add_shift(name="pu_weight_up", id=17, type="shape")
     add_shift_aliases(cfg,"pu_weight",{"pu_weight": "pu_weight_{direction}"})
+    
+    cfg.add_shift(name="Unclustered_weight_down", id=18, type="shape")
+    cfg.add_shift(name="Unclustered_weight_up", id=19, type="shape")
+    add_shift_aliases(cfg,"Unclustered_weight",{"Unclustered_weight": "Unclustered_weight_{direction}"})
     # add column aliases for shift jec
     for i, (jec_source, flag) in enumerate(all_jec_sources.items()):
         if not flag:
@@ -1324,14 +1242,30 @@ def add_run3(ana: od.Analysis,
             f"{cfg.x.met_name}.phi": f"{cfg.x.met_name}.phi_{{name}}",
         },
     )
-
-    # cfg.add_shift(name="btag_weight_SF_up", id=15, type="shape")
-    # cfg.add_shift(name="btag_weight_SF_down", id=16, type="shape")
-    # add_shift_aliases(cfg, "btag_weight_SF", {"btag_weight_SF_nom": "btag_weight_SF_nom_{direction}"})
     
+    ################################################################################################
+    # btag weight systematics saved as:
+    #   btag_weight_<source>_down / btag_weight_<source>_up
+    ################################################################################################
+     # btagging shifts
+    cfg.x.btag_unc_names = [
+        "hf", "lf",
+        "hfstats1", "hfstats2",
+        "lfstats1", "lfstats2",
+        "cferr1", "cferr2",
+    ]
+    for i, unc in enumerate(cfg.x.btag_unc_names):
+        cfg.add_shift(name=f"btag_weight_{unc}_up", id=110 + 2 * i, type="shape")
+        cfg.add_shift(name=f"btag_weight_{unc}_down", id=111 + 2 * i, type="shape")
+        
+        add_shift_aliases(
+            cfg,
+            f"btag_weight_{unc}",
+            {"btag_weight": f"btag_weight_{unc}_{{direction}}"},
+        )
     # event weight columns as keys in an OrderedDict, mapped to shift instances they depend on
     get_shifts = functools.partial(get_shifts_from_sources, cfg)   
-    
+
     cfg.x.event_weights = DotDict({
         "normalization_weight": [],
         # "filter_weight": [],
@@ -1342,57 +1276,11 @@ def add_run3(ana: od.Analysis,
         "muon_weight": get_shifts("muon_weight"),
         "electron_weight": get_shifts("electron_weight"), 
         "top_pt_weight" : get_shifts("top_pt_weight"),     
-        "pu_weight": get_shifts("pu_weight"),
-        "btag_weight_SF_nom": [],
         "Trigger_SF_weight": get_shifts("Trigger_SF_weight"),
         "stitching_weight": [],
+        "btag_weight":get_shifts(*(f"btag_weight_{unc}" for unc in cfg.x.btag_unc_names)),
+        "Unclustered_weight": get_shifts("Unclustered_weight"),
     })
-
-    # thisdir = os.path.dirname(os.path.abspath(__file__))
-    
-    # with open(os.path.join(thisdir, "jec_sources.yaml"), "r") as f:
-    #     all_jec_sources = yaml.load(f, yaml.Loader)["names"]
-
-    # for jec_source in cfg.x.jec["uncertainty_sources"]:
-    #     idx = all_jec_sources.index(jec_source)
-    #     cfg.add_shift(
-    #         name=f"jec_{jec_source}_up",
-    #         id=5000 + 2 * idx,
-    #         type="shape",
-    #         tags={"jec"},
-    #         aux={"jec_source": jec_source},
-    #     )
-    #     cfg.add_shift(
-    #         name=f"jec_{jec_source}_down",
-    #         id=5001 + 2 * idx,
-    #         type="shape",
-    #         tags={"jec"},
-    #         aux={"jec_source": jec_source},
-    #     )
-    #     add_shift_aliases(
-    #         cfg,
-    #         f"jec_{jec_source}",
-    #         {"Jet.pt": "Jet.pt_{name}", "Jet.mass": "Jet.mass_{name}"},
-    #     )
-
-    #     if jec_source in ["Total", *cfg.x.btag_sf_jec_sources]:
-    #         # when jec_source is a known btag SF source, add aliases for btag weight column
-    #         add_shift_aliases(
-    #             cfg,
-    #             f"jec_{jec_source}",
-    #             {
-    #                 "btag_weight": f"btag_weight_jec_{jec_source}_" + "{direction}",
-    #                 "normalized_btag_weight": f"normalized_btag_weight_jec_{jec_source}_" + "{direction}",
-    #                 "normalized_njet_btag_weight": f"normalized_njet_btag_weight_jec_{jec_source}_" + "{direction}",
-    #             },
-    #         )
-
-    # cfg.add_shift(name="jer_up", id=6000, type="shape", tags={"jer"})
-    # cfg.add_shift(name="jer_down", id=6001, type="shape", tags={"jer"})
-    # add_shift_aliases(cfg, "jer", {"Jet.pt": "Jet.pt_{name}", "Jet.mass": "Jet.mass_{name}"})
-  
-    
-
     
     # versions per task family, either referring to strings or to callables receving the invoking
     # task instance and parameters to be passed to the task family
@@ -1499,6 +1387,9 @@ def add_run3(ana: od.Analysis,
         "jec": [
             shift_inst.name for shift_inst in cfg.shifts
             if shift_inst.has_tag(("jec", "jer"))
+        ],
+        "btag_sf": [
+            shift_inst.name for shift_inst in get_shifts(*(f"btag_weight_{unc}" for unc in cfg.x.btag_unc_names))
         ],
     }
     
