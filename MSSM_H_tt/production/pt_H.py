@@ -14,29 +14,47 @@ ak = maybe_import("awkward")
 coffea = maybe_import("coffea")
 maybe_import("coffea.nanoevents.methods.nanoaod")
 import functools
-set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
-set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
 
 @producer(
-    uses={ f"PuppiMET.{var}" for var in 
-        ["pt", "phi",]} | {"hcand_*"},
+    uses={
+        "RecoilCorrMET.{pt,phi}",
+        "hcand_*",
+    },
     produces={"pt_H"},
     exposed=False,
 )
 def pt_H(
-        self: Producer,
-        events: ak.Array,
-        **kwargs
+    self: Producer,
+    events: ak.Array,
+    **kwargs,
 ) -> ak.Array:
     """
-    This function that produces 'pt_H' column to be used in categorisation
+    Produce pt_H using recoil-corrected MET.
+
+    This allows both:
+      - unclustered MET shifts, propagated through RecoilCorrMET
+      - recoil response/resolution shifts, via RecoilCorrMET aliases
     """
 
-    electron    = events.hcand_emu.lep0
-    muon        = events.hcand_emu.lep1
-    
-    somma = get_p2(electron)+get_p2(muon)+get_p2(events.PuppiMET)
-    pt_H = somma.rho
+    electron = events.hcand_emu.lep0
+    muon = events.hcand_emu.lep1
 
-    events = set_ak_column(events, "pt_H", pt_H)
+    somma = (
+        get_p2(electron)
+        + get_p2(muon)
+        + get_p2(events.RecoilCorrMET)
+    )
+
+    pt_H_value = somma.rho
+
+    events = set_ak_column(events, "pt_H", pt_H_value)
     return events
+
+
+@pt_H.init
+def pt_H_init(self: Producer) -> None:
+    self.shifts |= {
+        shift_inst.name
+        for shift_inst in self.config_inst.shifts
+        if shift_inst.has_tag(("met", "met_recoil"))
+    }

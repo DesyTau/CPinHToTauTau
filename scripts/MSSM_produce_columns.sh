@@ -3,7 +3,7 @@ source ./common_run3_MSSM.sh #to access set_common_vars() function
 #The following function defines config, processes, version and datasets variables
 set_common_vars "$1"
 args=(
-        --config $config
+        --configs $config
         --datasets $datasets
 
         --cf.CalibrateEvents-workflow $workflow
@@ -12,15 +12,21 @@ args=(
         --cf.SelectEvents-workflow $workflow
         --cf.SelectEvents-version $version
 
+        --cf.MergeSelectionStats-workflow $workflow
+        --cf.MergeSelectionStats-version $version
+        
         --cf.ReduceEvents-workflow $workflow
         --cf.ReduceEvents-version $version
         
         --cf.MergeReducedEvents-workflow $workflow
         --cf.MergeReducedEvents-version $version
-        --cf.ProduceColumns-workflow $workflow
 
-        --cf.MergeSelectionStats-version $version
+        --cf.ProvideReducedEvents-workflow $workflow
         --cf.ProvideReducedEvents-version $version
+
+        --cf.ProduceColumns-workflow $workflow
+        --cf.ProduceColumns-version $version
+
         --version $version
         "${@:2}"
     )

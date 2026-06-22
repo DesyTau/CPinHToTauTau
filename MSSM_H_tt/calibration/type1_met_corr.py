@@ -1,7 +1,14 @@
 # coding: utf-8
 
 """
-Propagation of JEC and JER to PuppiMET.
+Jet energy corrections / resolution smearing and propagation to PuppiMET.
+
+This implementation keeps JEC and JER as helper calibrators acting on jets,
+while a single public calibrator (`jme`) performs the MET propagation using
+the NanoAOD Type-1 recipe.
+
+Debug support was added to print step-by-step summaries of the relevant
+quantities and to compare the input PuppiMET against the propagated one.
 """
 
 from __future__ import annotations
@@ -20,7 +27,6 @@ from columnflow.columnar_util import (
     layout_ak_array,
     optional_column as optional,
     ak_concatenate_safe,
-    EMPTY_FLOAT,
 )
 from columnflow.types import Any
 
@@ -36,6 +42,174 @@ logger = law.logger.get_logger(__name__)
 #
 
 set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
+
+
+def _debug_enabled(obj: Any) -> bool:
+    return bool(getattr(obj, "debug", False))
+
+
+def _debug_name(obj: Any) -> str:
+    return getattr(obj, "name", obj.__class__.__name__)
+
+
+def _debug_log(obj: Any, msg: str) -> None:
+    if _debug_enabled(obj):
+        print(f"[JME-DEBUG:{_debug_name(obj)}] {msg}", flush=True)
+
+
+def _to_numpy_flat(arr: Any) -> np.ndarray:
+    if isinstance(arr, ak.Array):
+        try:
+            return np.asarray(
+                ak.to_numpy(
+                    ak.flatten(
+                        ak.fill_none(arr, np.nan),
+                        axis=None,
+                    )
+                )
+            )
+        except Exception:
+            return np.asarray(ak.to_list(ak.flatten(arr, axis=None)), dtype=object)
+    return np.asarray(arr).reshape(-1)
+
+
+def _to_numpy_1d(arr: Any) -> np.ndarray:
+    if isinstance(arr, ak.Array):
+        try:
+            return np.asarray(ak.to_numpy(ak.fill_none(arr, np.nan)))
+        except Exception:
+            return np.asarray(ak.to_list(arr), dtype=object)
+    return np.asarray(arr)
+
+
+def _debug_stats(obj: Any, label: str, arr: Any, max_entries: int | None = None) -> None:
+    if not _debug_enabled(obj):
+        return
+
+    max_entries = getattr(obj, "debug_max_events", 5) if max_entries is None else max_entries
+
+    try:
+        flat = _to_numpy_flat(arr)
+    except Exception as e:
+        _debug_log(obj, f"{label}: failed to convert array for debug: {e}")
+        _debug_log(obj, f"{label}: repr={repr(arr)[:500]}")
+        return
+
+    _debug_log(obj, f"{label}: size={flat.size}, dtype={flat.dtype}")
+
+    if flat.size == 0:
+        return
+
+    if np.issubdtype(flat.dtype, np.number):
+        finite = np.isfinite(flat)
+        n_finite = int(np.sum(finite))
+        if n_finite > 0:
+            vals = flat[finite].astype(np.float64, copy=False)
+            _debug_log(
+                obj,
+                (
+                    f"{label}: min={vals.min():.6g}, max={vals.max():.6g}, "
+                    f"mean={vals.mean():.6g}, std={vals.std():.6g}"
+                ),
+            )
+        else:
+            _debug_log(obj, f"{label}: no finite entries")
+
+    _debug_log(
+        obj,
+        f"{label}: first {min(max_entries, flat.size)} values = {flat[:max_entries]}",
+    )
+
+
+def _debug_mask(obj: Any, label: str, mask: ak.Array, max_entries: int | None = None) -> None:
+    if not _debug_enabled(obj):
+        return
+
+    max_entries = getattr(obj, "debug_max_events", 5) if max_entries is None else max_entries
+
+    mask_int = ak.values_astype(mask, np.int64)
+    selected = int(ak.sum(mask_int, axis=None))
+    total = int(ak.count(mask, axis=None))
+    per_event = np.asarray(ak.to_numpy(ak.sum(mask_int, axis=-1)))
+
+    _debug_log(obj, f"{label}: selected {selected} / {total}")
+    _debug_log(
+        obj,
+        f"{label}: first {min(max_entries, len(per_event))} per-event counts = {per_event[:max_entries]}",
+    )
+
+
+def _delta_phi_np(phi1: np.ndarray, phi2: np.ndarray) -> np.ndarray:
+    return np.arctan2(np.sin(phi1 - phi2), np.cos(phi1 - phi2))
+
+
+def _debug_compare_met(
+    obj: Any,
+    label: str,
+    ref_pt: Any,
+    ref_phi: Any,
+    test_pt: Any,
+    test_phi: Any,
+    rel_tol: float | None = None,
+    max_entries: int | None = None,
+) -> None:
+    if not _debug_enabled(obj):
+        return
+
+    rel_tol = getattr(obj, "debug_rel_tol", 0.01) if rel_tol is None else rel_tol
+    max_entries = getattr(obj, "debug_max_events", 5) if max_entries is None else max_entries
+
+    ref_pt_np = _to_numpy_1d(ref_pt).astype(np.float64, copy=False)
+    ref_phi_np = _to_numpy_1d(ref_phi).astype(np.float64, copy=False)
+    test_pt_np = _to_numpy_1d(test_pt).astype(np.float64, copy=False)
+    test_phi_np = _to_numpy_1d(test_phi).astype(np.float64, copy=False)
+
+    if not (len(ref_pt_np) == len(ref_phi_np) == len(test_pt_np) == len(test_phi_np)):
+        _debug_log(
+            obj,
+            (
+                f"{label}: length mismatch: "
+                f"ref_pt={len(ref_pt_np)}, ref_phi={len(ref_phi_np)}, "
+                f"test_pt={len(test_pt_np)}, test_phi={len(test_phi_np)}"
+            ),
+        )
+        return
+
+    if len(ref_pt_np) == 0:
+        _debug_log(obj, f"{label}: empty arrays")
+        return
+
+    denom = np.maximum(np.abs(ref_pt_np), 1e-6)
+    rel_pt = np.abs(test_pt_np - ref_pt_np) / denom
+    dphi = np.abs(_delta_phi_np(test_phi_np, ref_phi_np))
+
+    bad = rel_pt > rel_tol
+
+    _debug_log(
+        obj,
+        (
+            f"{label}: mean(rel_pt)={rel_pt.mean():.6g}, max(rel_pt)={rel_pt.max():.6g}, "
+            f"mean(|dphi|)={dphi.mean():.6g}, max(|dphi|)={dphi.max():.6g}, "
+            f"n_bad(>{100.0 * rel_tol:.2f}%)={int(np.sum(bad))}/{len(rel_pt)}"
+        ),
+    )
+
+    idx = np.where(bad)[0]
+    if len(idx) == 0:
+        idx = np.arange(min(max_entries, len(rel_pt)))
+    else:
+        idx = idx[:max_entries]
+
+    for i in idx:
+        _debug_log(
+            obj,
+            (
+                f"{label}: event[{i}] "
+                f"ref_pt={ref_pt_np[i]:.6g}, test_pt={test_pt_np[i]:.6g}, "
+                f"rel_pt={rel_pt[i]:.6g}, ref_phi={ref_phi_np[i]:.6g}, "
+                f"test_phi={test_phi_np[i]:.6g}, |dphi|={dphi[i]:.6g}"
+            ),
+        )
 
 
 def get_evaluators(
@@ -202,6 +376,7 @@ def get_jec_config_default(self: Calibrator) -> DotDict:
 @calibrator(
     uses={
         "Jet.muonSubtrFactor",
+        optional("Jet.muonSubtrDeltaPhi"),
         "Jet.chEmEF",
         "Jet.neEmEF",
         "run",
@@ -212,30 +387,24 @@ def get_jec_config_default(self: Calibrator) -> DotDict:
     met_name="PuppiMET",
     raw_met_name="RawPuppiMET",
     uncertainty_sources=None,
-    propagate_met=True,
+    propagate_met=False,
     get_jec_file=get_jerc_file_default,
     get_jec_config=get_jec_config_default,
     update_corrector_variables=(lambda self, corrector, variables: variables),
+    debug=False,
+    debug_max_events=5,
+    debug_rel_tol=0.01,
 )
 def jec(
     self: Calibrator,
     events: ak.Array,
-    min_pt_met_prop: float = 15.0,
-    max_eta_met_prop: float = 5.2,
     **kwargs,
 ) -> ak.Array:
     """
-    Perform jet energy corrections (JEC) and optionally propagate them to PuppiMET.
+    Perform jet energy corrections (JEC) for the jet collection and store
+    extra helper columns needed for NanoAOD Type-1 MET propagation.
     """
     jet_name = self.jet_name
-    met_name = self.met_name
-    raw_met_name = self.raw_met_name
-
-    events = set_ak_column_f32(
-        events,
-        f"{jet_name}.pt_raw",
-        events[jet_name].pt * (1 - events[jet_name].rawFactor) *(1 - events[jet_name].muonSubtrFactor),
-    )
 
     def correct_jets(*, pt, eta, phi, area, rho, run, evaluator_key="jec"):
         variable_map = {
@@ -261,6 +430,17 @@ def jec(
             variable_map["JetPt"] = variable_map["JetPt"] * correction
             full_correction = full_correction * correction
 
+            _debug_stats(
+                self,
+                f"{evaluator_key}:{getattr(corrector, 'level', 'unknown')} step",
+                correction,
+            )
+            _debug_stats(
+                self,
+                f"{evaluator_key}:{getattr(corrector, 'level', 'unknown')} cumulative",
+                full_correction,
+            )
+
         return full_correction
 
     rho = (
@@ -269,34 +449,74 @@ def jec(
         else events.Rho.fixedGridRhoFastjetAll
     )
 
-    if self.propagate_met:
-        jec_factors_subset_type1_met = correct_jets(
-            pt=events[jet_name].pt_raw,
-            eta=events[jet_name].eta,
-            phi=events[jet_name].phi,
-            area=events[jet_name].area,
-            rho=rho,
-            run=events.run,
-            evaluator_key="jec_subset_type1_met",
-        )
+    _debug_log(
+        self,
+        (
+            f"starting jec: dataset={self.dataset_inst.name}, "
+            f"is_data={self.dataset_inst.is_data}, jet_name={jet_name}"
+        ),
+    )
+    _debug_stats(self, f"{jet_name}.pt input", events[jet_name].pt)
+    _debug_stats(self, f"{jet_name}.eta input", events[jet_name].eta)
+    _debug_stats(self, f"{jet_name}.phi input", events[jet_name].phi)
+    _debug_stats(self, "rho", rho)
 
-        events = set_ak_column_f32(
-            events,
-            f"{jet_name}.pt",
-            events[jet_name].pt_raw * jec_factors_subset_type1_met,
-        )
+    # standard raw jet pt
+    events = set_ak_column_f32(
+        events,
+        f"{jet_name}.pt_raw",
+        events[jet_name].pt * (1.0 - events[jet_name].rawFactor),
+    )
 
-        met_prop_mask = (
-            (events[jet_name].pt > min_pt_met_prop) &
-            (abs(events[jet_name].eta) < max_eta_met_prop) &
-            ((events[jet_name].chEmEF + events[jet_name].neEmEF) < 0.9)
-        )
+    # muon-subtracted raw jet quantities used for Type-1 MET
+    events = set_ak_column_f32(
+        events,
+        f"{jet_name}.pt_noMuRaw",
+        events[jet_name].pt_raw * (1.0 - events[jet_name].muonSubtrFactor),
+    )
 
-        jetsum_pt_subset_type1_met, jetsum_phi_subset_type1_met = sum_transverse(
-            events[jet_name][met_prop_mask].pt,
-            events[jet_name][met_prop_mask].phi,
-        )
+    phi_noMuRaw = (
+        events[jet_name].phi + events[jet_name].muonSubtrDeltaPhi
+        if "muonSubtrDeltaPhi" in events[jet_name].fields
+        else events[jet_name].phi
+    )
+    events = set_ak_column_f32(
+        events,
+        f"{jet_name}.phi_noMuRaw",
+        phi_noMuRaw,
+    )
 
+    _debug_stats(self, f"{jet_name}.pt_raw", events[jet_name].pt_raw)
+    _debug_stats(self, f"{jet_name}.pt_noMuRaw", events[jet_name].pt_noMuRaw)
+    _debug_stats(self, f"{jet_name}.phi_noMuRaw", events[jet_name].phi_noMuRaw)
+
+    # L1-only correction for Type-1 MET
+    jec_factors_l1 = correct_jets(
+        pt=events[jet_name].pt_raw,
+        eta=events[jet_name].eta,
+        phi=events[jet_name].phi,
+        area=events[jet_name].area,
+        rho=rho,
+        run=events.run,
+        evaluator_key="jec_l1",
+    )
+
+    events = set_ak_column_f32(
+        events,
+        f"{jet_name}.pt_l1",
+        events[jet_name].pt_raw * jec_factors_l1,
+    )
+    events = set_ak_column_f32(
+        events,
+        f"{jet_name}.pt_noMuL1",
+        events[jet_name].pt_noMuRaw * jec_factors_l1,
+    )
+
+    _debug_stats(self, "jec_factors_l1", jec_factors_l1)
+    _debug_stats(self, f"{jet_name}.pt_l1", events[jet_name].pt_l1)
+    _debug_stats(self, f"{jet_name}.pt_noMuL1", events[jet_name].pt_noMuL1)
+
+    # full L1L2L3 correction for the jet collection
     jec_factors = correct_jets(
         pt=events[jet_name].pt_raw,
         eta=events[jet_name].eta,
@@ -312,30 +532,22 @@ def jec(
         f"{jet_name}.pt",
         events[jet_name].pt_raw * jec_factors,
     )
+    events = set_ak_column_f32(
+        events,
+        f"{jet_name}.pt_noMuL1L2L3",
+        events[jet_name].pt_noMuRaw * jec_factors,
+    )
 
     raw_factor = ak.nan_to_num(
-        1 - events[jet_name].pt_raw / events[jet_name].pt,
+        1.0 - events[jet_name].pt_raw / events[jet_name].pt,
         nan=0.0,
     )
     events = set_ak_column_f32(events, f"{jet_name}.rawFactor", raw_factor)
 
-    if self.propagate_met:
-        jetsum_pt_all_levels, jetsum_phi_all_levels = sum_transverse(
-            events[jet_name][met_prop_mask].pt,
-            events[jet_name][met_prop_mask].phi,
-        )
-
-        met_pt, met_phi = propagate_met(
-            jetsum_pt_subset_type1_met,
-            jetsum_phi_subset_type1_met,
-            jetsum_pt_all_levels,
-            jetsum_phi_all_levels,
-            events[raw_met_name].pt,
-            events[raw_met_name].phi,
-        )
-
-        events = set_ak_column_f32(events, f"{met_name}.pt", met_pt)
-        events = set_ak_column_f32(events, f"{met_name}.phi", met_phi)
+    _debug_stats(self, "jec_factors_full", jec_factors)
+    _debug_stats(self, f"{jet_name}.pt corrected", events[jet_name].pt)
+    _debug_stats(self, f"{jet_name}.pt_noMuL1L2L3", events[jet_name].pt_noMuL1L2L3)
+    _debug_stats(self, f"{jet_name}.rawFactor updated", events[jet_name].rawFactor)
 
     variable_map = {
         "JetEta": events[jet_name].eta,
@@ -357,37 +569,23 @@ def jec(
             events[jet_name].pt * (1.0 - jec_uncertainty),
         )
 
-        if self.propagate_met:
-            jetsum_pt_up, jetsum_phi_up = sum_transverse(
-                events[jet_name][met_prop_mask][f"pt_jec_{name}_up"],
-                events[jet_name][met_prop_mask].phi,
-            )
-            jetsum_pt_down, jetsum_phi_down = sum_transverse(
-                events[jet_name][met_prop_mask][f"pt_jec_{name}_down"],
-                events[jet_name][met_prop_mask].phi,
-            )
+        # store no-muon Type-1 helpers for varied JEC
+        events = set_ak_column_f32(
+            events,
+            f"{jet_name}.pt_noMu_jec_{name}_up",
+            events[jet_name].pt_noMuL1L2L3 * (1.0 + jec_uncertainty),
+        )
+        events = set_ak_column_f32(
+            events,
+            f"{jet_name}.pt_noMu_jec_{name}_down",
+            events[jet_name].pt_noMuL1L2L3 * (1.0 - jec_uncertainty),
+        )
 
-            met_pt_up, met_phi_up = propagate_met(
-                jetsum_pt_all_levels,
-                jetsum_phi_all_levels,
-                jetsum_pt_up,
-                jetsum_phi_up,
-                met_pt,
-                met_phi,
-            )
-            met_pt_down, met_phi_down = propagate_met(
-                jetsum_pt_all_levels,
-                jetsum_phi_all_levels,
-                jetsum_pt_down,
-                jetsum_phi_down,
-                met_pt,
-                met_phi,
-            )
-
-            events = set_ak_column_f32(events, f"{met_name}.pt_jec_{name}_up", met_pt_up)
-            events = set_ak_column_f32(events, f"{met_name}.pt_jec_{name}_down", met_pt_down)
-            events = set_ak_column_f32(events, f"{met_name}.phi_jec_{name}_up", met_phi_up)
-            events = set_ak_column_f32(events, f"{met_name}.phi_jec_{name}_down", met_phi_down)
+        _debug_stats(self, f"jec_uncertainty_{name}", jec_uncertainty)
+        _debug_stats(self, f"{jet_name}.pt_jec_{name}_up", events[jet_name][f"pt_jec_{name}_up"])
+        _debug_stats(self, f"{jet_name}.pt_jec_{name}_down", events[jet_name][f"pt_jec_{name}_down"])
+        _debug_stats(self, f"{jet_name}.pt_noMu_jec_{name}_up", events[jet_name][f"pt_noMu_jec_{name}_up"])
+        _debug_stats(self, f"{jet_name}.pt_noMu_jec_{name}_down", events[jet_name][f"pt_noMu_jec_{name}_down"])
 
     return events
 
@@ -408,11 +606,21 @@ def jec_init(self: Calibrator, **kwargs) -> None:
         f"{self.jet_name}.phi",
         f"{self.jet_name}.area",
         f"{self.jet_name}.rawFactor",
+        f"{self.jet_name}.muonSubtrFactor",
+        optional(f"{self.jet_name}.muonSubtrDeltaPhi"),
+        f"{self.jet_name}.chEmEF",
+        f"{self.jet_name}.neEmEF",
     }
 
     self.produces |= {
         f"{self.jet_name}.pt",
         f"{self.jet_name}.rawFactor",
+        f"{self.jet_name}.pt_raw",
+        f"{self.jet_name}.pt_l1",
+        f"{self.jet_name}.pt_noMuRaw",
+        f"{self.jet_name}.phi_noMuRaw",
+        f"{self.jet_name}.pt_noMuL1",
+        f"{self.jet_name}.pt_noMuL1L2L3",
     }
 
     self.produces |= {
@@ -420,24 +628,11 @@ def jec_init(self: Calibrator, **kwargs) -> None:
         for junc_name in sources
         for junc_dir in ("up", "down")
     }
-
-    if self.propagate_met:
-        self.uses |= {
-            f"{self.raw_met_name}.pt",
-            f"{self.raw_met_name}.phi",
-            f"{self.met_name}.pt",
-            f"{self.met_name}.phi",
-        }
-        self.produces |= {
-            f"{self.met_name}.pt",
-            f"{self.met_name}.phi",
-        }
-        self.produces |= {
-            f"{self.met_name}.{shifted_var}_jec_{junc_name}_{junc_dir}"
-            for shifted_var in ("pt", "phi")
-            for junc_name in sources
-            for junc_dir in ("up", "down")
-        }
+    self.produces |= {
+        f"{self.jet_name}.pt_noMu_jec_{junc_name}_{junc_dir}"
+        for junc_name in sources
+        for junc_dir in ("up", "down")
+    }
 
 
 @jec.requires
@@ -513,32 +708,44 @@ def jec_setup(
             f"Could not find '{key}' in jec config for jet collection '{self.jet_name}'."
         )
 
-    def get_type1_met_levels() -> list[str]:
+    def get_l1_levels() -> list[str]:
         if "levels_for_type1_met" in jec_cfg:
             return list(jec_cfg["levels_for_type1_met"])
 
-        logger.warning_once(
-            f"{id(self)}_missing_levels_for_type1_met",
-            "No 'levels_for_type1_met' found in jec config. "
-            "Falling back to the full JEC levels.",
+        l1_levels = [lvl for lvl in get_main_levels() if lvl.startswith("L1")]
+        if l1_levels:
+            return l1_levels
+
+        raise ValueError(
+            "Could not determine L1-only JEC levels. Please define "
+            "'levels_for_type1_met' in the jec config."
         )
-        return jec_levels
 
     jec_levels = get_main_levels()
-
-    if self.propagate_met:
-        jec_subset_levels = get_type1_met_levels()
-    else:
-        jec_subset_levels = []
+    jec_l1_levels = get_l1_levels()
 
     jec_keys = make_jme_keys(jec_levels)
+    jec_l1_keys = make_jme_keys(jec_l1_levels)
     junc_keys = make_jme_keys(self.uncertainty_sources, is_data=False)
+
+    _debug_log(self, f"JEC file = {jec_file}")
+    _debug_log(self, f"JEC main levels = {jec_levels}")
+    _debug_log(self, f"JEC L1 levels = {jec_l1_levels}")
+    _debug_log(self, f"JEC uncertainty sources = {self.uncertainty_sources}")
+    _debug_log(self, f"JEC keys = {jec_keys}")
+    _debug_log(self, f"JEC L1 keys = {jec_l1_keys}")
+    _debug_log(self, f"JEC uncertainty keys = {junc_keys}")
 
     self.evaluators = {
         "jec": get_evaluators(
             correction_set,
             jec_keys,
             attrs=[{"level": level} for level in jec_levels],
+        ),
+        "jec_l1": get_evaluators(
+            correction_set,
+            jec_l1_keys,
+            attrs=[{"level": level} for level in jec_l1_levels],
         ),
         "junc": dict(
             zip(
@@ -547,14 +754,6 @@ def jec_setup(
             )
         ),
     }
-
-    if self.propagate_met:
-        jec_subset_keys = make_jme_keys(jec_subset_levels)
-        self.evaluators["jec_subset_type1_met"] = get_evaluators(
-            correction_set,
-            jec_subset_keys,
-            attrs=[{"level": level} for level in jec_subset_levels],
-        )
 
 
 jec_nominal = jec.derive("jec_nominal", cls_dict={"uncertainty_sources": []})
@@ -603,7 +802,7 @@ def get_jer_config_default(self: Calibrator) -> DotDict:
     jet_name="Jet",
     gen_jet_name="GenJet",
     met_name="PuppiMET",
-    propagate_met=True,
+    propagate_met=False,
     mc_only=True,
     deterministic_seed_index=-1,
     get_jer_file=get_jerc_file_default,
@@ -612,10 +811,13 @@ def get_jer_config_default(self: Calibrator) -> DotDict:
     jec_uncertainty_sources=None,
     gen_jet_matching_nominal=False,
     stochastic_smearing_mask=lambda self, jets: ak.ones_like(jets.pt, dtype=bool),
+    debug=False,
+    debug_max_events=5,
+    debug_rel_tol=0.01,
 )
 def jer(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     """
-    Apply jet energy resolution smearing in MC and optionally propagate it to PuppiMET.
+    Apply jet energy resolution smearing in MC.
     """
     jet_name = self.jet_name
     gen_jet_name = self.gen_jet_name
@@ -625,6 +827,17 @@ def jer(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
         raise ValueError("attempt to apply jet energy resolution smearing in data")
 
     jer_nom, jer_up, jer_down = self.jer_variations
+
+    _debug_log(
+        self,
+        (
+            f"starting jer: dataset={self.dataset_inst.name}, "
+            f"is_mc={self.dataset_inst.is_mc}, jet_name={jet_name}, "
+            f"gen_jet_name={gen_jet_name}"
+        ),
+    )
+    _debug_stats(self, f"{jet_name}.pt before JER", events[jet_name].pt)
+    _debug_stats(self, f"{gen_jet_name}.pt", events[gen_jet_name].pt)
 
     events = set_ak_column_f32(events, f"{jet_name}.pt_unsmeared", events[jet_name].pt)
 
@@ -637,6 +850,8 @@ def jer(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
             rand_func=np.random.Generator(np.random.SFC64(events.event.to_list())).normal,
         )
     )
+
+    _debug_stats(self, "random_normal", random_normal)
 
     rho = (
         events.fixedGridRhoFastjetAll
@@ -652,15 +867,15 @@ def jer(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     }
 
     inputs = [variable_map[inp.name] for inp in self.evaluators["jer"].inputs]
-    jer = {jer_nom: ak_evaluate(self.evaluators["jer"], *inputs)}
+    jer_vals = {jer_nom: ak_evaluate(self.evaluators["jer"], *inputs)}
 
-    jer[jer_up] = jer[jer_nom]
-    jer[jer_down] = jer[jer_nom]
+    jer_vals[jer_up] = jer_vals[jer_nom]
+    jer_vals[jer_down] = jer_vals[jer_nom]
 
     for jec_var in self.jec_variations:
         _variable_map = variable_map | {"JetPt": events[jet_name][f"pt_{jec_var}"]}
         inputs = [_variable_map[inp.name] for inp in self.evaluators["jer"].inputs]
-        jer[jec_var] = ak_evaluate(self.evaluators["jer"], *inputs)
+        jer_vals[jec_var] = ak_evaluate(self.evaluators["jer"], *inputs)
 
     jersf = {}
     for jer_var in self.jer_variations:
@@ -673,21 +888,27 @@ def jer(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
         inputs = [_variable_map[inp.name] for inp in self.evaluators["sf"].inputs]
         jersf[jec_var] = ak_evaluate(self.evaluators["sf"], *inputs)
 
-    jer = ak_concatenate_safe(
-        [jer[v][..., None] for v in self.jer_variations + self.jec_variations],
+    for key, value in jer_vals.items():
+        _debug_stats(self, f"jer_vals[{key}]", value)
+
+    for key, value in jersf.items():
+        _debug_stats(self, f"jersf[{key}]", value)
+
+    jer_arr = ak_concatenate_safe(
+        [jer_vals[v][..., None] for v in self.jer_variations + self.jec_variations],
         axis=-1,
     )
-    jersf = ak_concatenate_safe(
+    jersf_arr = ak_concatenate_safe(
         [jersf[v][..., None] for v in self.jer_variations + self.jec_variations],
         axis=-1,
     )
 
-    jersf2_m1 = jersf**2 - 1
+    jersf2_m1 = jersf_arr**2 - 1
     add_smear = np.sqrt(ak.where(jersf2_m1 < 0, 0, jersf2_m1))
 
     smear_factors_stochastic = ak.where(
         self.stochastic_smearing_mask(events[jet_name]),
-        1.0 + random_normal * jer * add_smear,
+        1.0 + random_normal * jer_arr * add_smear,
         1.0,
     )
 
@@ -713,13 +934,20 @@ def jer(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
 
     pt_relative_diff = 1 - matched_gen_jet.pt / match_pt
 
-    is_matched_pt = np.abs(pt_relative_diff) < 3 * jer
+    is_matched_pt = np.abs(pt_relative_diff) < 3 * jer_arr
     is_matched_pt = ak.fill_none(is_matched_pt, False)
 
-    smear_factors_scaling = 1.0 + (jersf - 1.0) * pt_relative_diff
+    smear_factors_scaling = 1.0 + (jersf_arr - 1.0) * pt_relative_diff
 
     smear_factors = ak.where(is_matched_pt, smear_factors_scaling, smear_factors_stochastic)
     smear_factors = ak.fill_none(smear_factors, 0.0)
+
+    _debug_mask(self, "is_matched_pt", is_matched_pt)
+    _debug_stats(self, "smear_factors_scaling", smear_factors_scaling)
+    _debug_stats(self, "smear_factors_stochastic", smear_factors_stochastic)
+
+    for i, postfix in enumerate(self.postfixes):
+        _debug_stats(self, f"smear_factors{postfix}", smear_factors[..., i])
 
     for direction in ["up", "down"]:
         events = set_ak_column_f32(events, f"{jet_name}.pt_jer_{direction}", events[jet_name].pt)
@@ -739,6 +967,7 @@ def jer(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     for i, postfix in enumerate(self.postfixes):
         pt_name = f"pt{postfix}"
         events = set_ak_column_f32(events, f"{jet_name}.{pt_name}", events[jet_name][pt_name] * smear_factors[..., i])
+        _debug_stats(self, f"{jet_name}.{pt_name}", events[jet_name][pt_name])
 
     if self.propagate_met:
         events = set_ak_column_f32(events, f"{met_name}.pt_unsmeared", events[met_name].pt)
@@ -822,7 +1051,7 @@ def jer_init(self: Calibrator, **kwargs) -> None:
             f"{self.met_name}.pt",
             f"{self.met_name}.phi",
         }
-        
+
         if jec_sources:
             self.uses |= met_jec_columns
 
@@ -875,6 +1104,9 @@ def jer_setup(
         "sf": f"{jer_cfg.campaign}_{jer_cfg.version}_MC_ScaleFactor_{jer_cfg.jet_type}",
     }
 
+    _debug_log(self, f"JER file = {jer_file}")
+    _debug_log(self, f"JER keys = {jer_keys}")
+
     self.evaluators = {
         name: get_evaluators(correction_set, [key])[0]
         for name, key in jer_keys.items()
@@ -894,114 +1126,468 @@ def jer_setup(
 
 
 #
-# combined calibrator: compute JEC+JER internally, propagate to MET once,
-# do not modify the output Jet collection
+# combined public calibrator:
+# apply JEC + JER to jets internally, propagate to MET only here
 #
 
 @calibrator(
+    uses={
+        "run",
+        optional("fixedGridRhoFastjetAll"),
+        optional("Rho.fixedGridRhoFastjetAll"),
+        optional("CorrT1METJet.rawPt"),
+        optional("CorrT1METJet.eta"),
+        optional("CorrT1METJet.area"),
+        optional("CorrT1METJet.phi"),
+        optional("CorrT1METJet.muonSubtrFactor"),
+        optional("CorrT1METJet.muonSubtrDeltaPhi"),
+        optional("CorrT1METJet.EmEF"),
+    },
     jet_name="Jet",
     gen_jet_name="GenJet",
     met_name="PuppiMET",
     raw_met_name="RawPuppiMET",
-    propagate_met=True,
     get_jec_file=get_jerc_file_default,
     get_jec_config=get_jec_config_default,
     get_jer_file=get_jerc_file_default,
     get_jer_config=get_jer_config_default,
     jec_uncertainty_sources=None,
+    debug=False,
+    debug_max_events=5,
+    debug_rel_tol=0.01,
 )
-def jets_puppimet_only(
+def jme(
     self: Calibrator,
     events: ak.Array,
     min_pt_met_prop: float = 15.0,
-    max_eta_met_prop: float = 5.2,
     **kwargs,
 ) -> ak.Array:
     """
-    Compute JEC and JER on a temporary jet collection and propagate the final
-    jet changes to PuppiMET exactly once, without modifying the output Jet
-    collection in *events*.
+    Apply JEC and JER to jets and propagate to PuppiMET with a single public
+    calibrator. The nominal PuppiMET follows the NanoAOD Type-1 JEC recipe,
+    and JER-propagated variations are added as shifted MET columns.
     """
     jet_name = self.jet_name
     met_name = self.met_name
+    raw_met_name = self.raw_met_name
 
-    def get_jetsum(ev: ak.Array, pt_field: str = "pt") -> tuple[ak.Array, ak.Array]:
-        jets = ev[jet_name]
-        pt = jets[pt_field]
-        phi = jets.phi
-        eta = jets.eta
+    input_met_pt = events[met_name].pt if met_name in events.fields else None
+    input_met_phi = events[met_name].phi if met_name in events.fields else None
 
-        mask = (pt > min_pt_met_prop) & (abs(eta) < max_eta_met_prop) & ((jets.chEmEF + jets.neEmEF) < 0.9)
+    _debug_log(
+        self,
+        (
+            f"starting jme: dataset={self.dataset_inst.name}, "
+            f"is_data={self.dataset_inst.is_data}, is_mc={self.dataset_inst.is_mc}, "
+            f"min_pt_met_prop={min_pt_met_prop}"
+        ),
+    )
+    if input_met_pt is not None:
+        _debug_stats(self, f"input {met_name}.pt", input_met_pt)
+        _debug_stats(self, f"input {met_name}.phi", input_met_phi)
 
-        return sum_transverse(
-            pt[mask],
-            phi[mask],
+    _debug_stats(self, f"input {raw_met_name}.pt", events[raw_met_name].pt)
+    _debug_stats(self, f"input {raw_met_name}.phi", events[raw_met_name].phi)
+
+    events = self[self.jec_cls](events, **kwargs)
+
+    if self.dataset_inst.is_mc:
+        events = self[self.jer_cls](events, **kwargs)
+
+    rho = (
+        events.fixedGridRhoFastjetAll
+        if "fixedGridRhoFastjetAll" in events.fields
+        else events.Rho.fixedGridRhoFastjetAll
+    )
+    _debug_stats(self, "rho", rho)
+
+    def has_corr_t1_collection(ev: ak.Array) -> bool:
+        if "CorrT1METJet" not in ev.fields:
+            return False
+        needed = {
+            "rawPt",
+            "eta",
+            "area",
+            "phi",
+            "muonSubtrFactor",
+            "EmEF",
+        }
+        return needed.issubset(set(ev["CorrT1METJet"].fields))
+
+    def evaluate_chain(evaluators, *, pt, eta, phi, area, rho, run):
+        variable_map = {
+            "JetA": area,
+            "JetEta": eta,
+            "JetPt": pt,
+            "JetPhi": phi,
+            "Rho": ak.values_astype(rho, np.float32),
+            "run": run,
+        }
+
+        corr = ak.ones_like(pt, dtype=np.float32)
+        for corrector in evaluators:
+            inputs = [variable_map[inp.name] for inp in corrector.inputs]
+            step = ak_evaluate(corrector, *inputs)
+            variable_map["JetPt"] = variable_map["JetPt"] * step
+            corr = corr * step
+
+            _debug_stats(self, f"evaluate_chain level={getattr(corrector, 'level', 'unknown')} step", step)
+            _debug_stats(self, f"evaluate_chain level={getattr(corrector, 'level', 'unknown')} cumulative", corr)
+
+        return corr
+
+    def jetsum(pt, phi, mask):
+        return sum_transverse(pt[mask], phi[mask])
+
+    corr_t1_present = has_corr_t1_collection(events)
+    _debug_log(self, f"CorrT1METJet present and usable = {corr_t1_present}")
+
+    # start from RawPuppiMET
+    met_nom_pt = events[raw_met_name].pt
+    met_nom_phi = events[raw_met_name].phi
+
+    if input_met_pt is not None:
+        _debug_compare_met(
+            self,
+            f"input {met_name} vs {raw_met_name}",
+            input_met_pt,
+            input_met_phi,
+            met_nom_pt,
+            met_nom_phi,
         )
 
-    tmp_events = events
+    # --------------------------------------------------------------
+    # nominal Type-1 MET from main Jet collection
+    # --------------------------------------------------------------
+    _debug_stats(self, f"{jet_name}.pt", events[jet_name].pt)
+    _debug_stats(self, f"{jet_name}.pt_raw", events[jet_name].pt_raw)
+    _debug_stats(self, f"{jet_name}.pt_l1", events[jet_name].pt_l1)
+    _debug_stats(self, f"{jet_name}.pt_noMuRaw", events[jet_name].pt_noMuRaw)
+    _debug_stats(self, f"{jet_name}.pt_noMuL1", events[jet_name].pt_noMuL1)
+    _debug_stats(self, f"{jet_name}.pt_noMuL1L2L3", events[jet_name].pt_noMuL1L2L3)
+    _debug_stats(self, f"{jet_name}.phi_noMuRaw", events[jet_name].phi_noMuRaw)
 
-    tmp_events = self[self.jec_cls](tmp_events, **kwargs)
+    main_mask_nom = (
+        (events[jet_name].pt_noMuL1L2L3 > min_pt_met_prop) &
+        ((events[jet_name].chEmEF + events[jet_name].neEmEF) < 0.9)
+    )
+    _debug_mask(self, "main nominal jet mask", main_mask_nom)
 
-    if self.dataset_inst.is_mc:
-        tmp_events = self[self.jer_cls](tmp_events, **kwargs)
-
-    jetsum_pt_before, jetsum_phi_before = get_jetsum(events, "pt")
-    jetsum_pt_after, jetsum_phi_after = get_jetsum(tmp_events, "pt")
-
-    met_input_pt = events[met_name].pt
-    met_input_phi = events[met_name].phi
-
-    met_nominal_pt, met_nominal_phi = propagate_met(
-        jetsum_pt_before,
-        jetsum_phi_before,
-        jetsum_pt_after,
-        jetsum_phi_after,
-        met_input_pt,
-        met_input_phi,
+    main_l1_pt, main_l1_phi = jetsum(
+        events[jet_name].pt_noMuL1,
+        events[jet_name].phi_noMuRaw,
+        main_mask_nom,
+    )
+    main_full_pt, main_full_phi = jetsum(
+        events[jet_name].pt_noMuL1L2L3,
+        events[jet_name].phi_noMuRaw,
+        main_mask_nom,
     )
 
-    events = set_ak_column_f32(events, f"{met_name}.pt", met_nominal_pt)
-    events = set_ak_column_f32(events, f"{met_name}.phi", met_nominal_phi)
+    _debug_stats(self, "main_l1_pt", main_l1_pt)
+    _debug_stats(self, "main_l1_phi", main_l1_phi)
+    _debug_stats(self, "main_full_pt", main_full_pt)
+    _debug_stats(self, "main_full_phi", main_full_phi)
 
+    met_before_main_pt = met_nom_pt
+    met_before_main_phi = met_nom_phi
+
+    met_nom_pt, met_nom_phi = propagate_met(
+        main_l1_pt,
+        main_l1_phi,
+        main_full_pt,
+        main_full_phi,
+        met_nom_pt,
+        met_nom_phi,
+    )
+
+    _debug_compare_met(
+        self,
+        "MET change after main Jet Type-1 propagation",
+        met_before_main_pt,
+        met_before_main_phi,
+        met_nom_pt,
+        met_nom_phi,
+        rel_tol=0.0,
+    )
+
+    # --------------------------------------------------------------
+    # nominal Type-1 MET from CorrT1METJet auxiliary collection
+    # --------------------------------------------------------------
+    corr_nom_full_pt = None
+    corr_nom_full_phi = None
+    corr_pt_noMuL1L2L3_nom = None
+    corr_phi_noMuRaw_nom = None
+
+    if corr_t1_present:
+        corr = events["CorrT1METJet"]
+
+        _debug_stats(self, "CorrT1METJet.rawPt", corr.rawPt)
+        _debug_stats(self, "CorrT1METJet.eta", corr.eta)
+        _debug_stats(self, "CorrT1METJet.area", corr.area)
+        _debug_stats(self, "CorrT1METJet.phi", corr.phi)
+        _debug_stats(self, "CorrT1METJet.muonSubtrFactor", corr.muonSubtrFactor)
+        _debug_stats(self, "CorrT1METJet.EmEF", corr.EmEF)
+
+        corr_pt_noMuRaw = corr.rawPt * (1.0 - corr.muonSubtrFactor)
+        corr_phi_noMuRaw = (
+            corr.phi + corr.muonSubtrDeltaPhi
+            if "muonSubtrDeltaPhi" in corr.fields
+            else corr.phi
+        )
+        if "muonSubtrDeltaPhi" not in corr.fields:
+            _debug_log(
+                self,
+                "CorrT1METJet.muonSubtrDeltaPhi missing -> using corr.phi as phi_noMuRaw",
+            )
+
+        _debug_stats(self, "CorrT1METJet.pt_noMuRaw", corr_pt_noMuRaw)
+        _debug_stats(self, "CorrT1METJet.phi_noMuRaw", corr_phi_noMuRaw)
+
+        corr_l1_factor = evaluate_chain(
+            self.corr_t1_evaluators["jec_l1"],
+            pt=corr.rawPt,
+            eta=corr.eta,
+            phi=corr.phi,
+            area=corr.area,
+            rho=rho,
+            run=events.run,
+        )
+        corr_full_factor = evaluate_chain(
+            self.corr_t1_evaluators["jec"],
+            pt=corr.rawPt,
+            eta=corr.eta,
+            phi=corr.phi,
+            area=corr.area,
+            rho=rho,
+            run=events.run,
+        )
+
+        _debug_stats(self, "CorrT1METJet.l1_factor", corr_l1_factor)
+        _debug_stats(self, "CorrT1METJet.full_factor", corr_full_factor)
+
+        corr_pt_noMuL1 = corr_pt_noMuRaw * corr_l1_factor
+        corr_pt_noMuL1L2L3 = corr_pt_noMuRaw * corr_full_factor
+
+        corr_pt_noMuL1L2L3_nom = corr_pt_noMuL1L2L3
+        corr_phi_noMuRaw_nom = corr_phi_noMuRaw
+
+        _debug_stats(self, "CorrT1METJet.pt_noMuL1", corr_pt_noMuL1)
+        _debug_stats(self, "CorrT1METJet.pt_noMuL1L2L3", corr_pt_noMuL1L2L3)
+
+        corr_mask_nom = (
+            (corr_pt_noMuL1L2L3 > min_pt_met_prop) &
+            (corr.EmEF < 0.9)
+        )
+        _debug_mask(self, "CorrT1METJet nominal mask", corr_mask_nom)
+
+        corr_l1_pt, corr_l1_phi = jetsum(
+            corr_pt_noMuL1,
+            corr_phi_noMuRaw,
+            corr_mask_nom,
+        )
+        corr_nom_full_pt, corr_nom_full_phi = jetsum(
+            corr_pt_noMuL1L2L3,
+            corr_phi_noMuRaw,
+            corr_mask_nom,
+        )
+
+        _debug_stats(self, "corr_l1_pt", corr_l1_pt)
+        _debug_stats(self, "corr_l1_phi", corr_l1_phi)
+        _debug_stats(self, "corr_nom_full_pt", corr_nom_full_pt)
+        _debug_stats(self, "corr_nom_full_phi", corr_nom_full_phi)
+
+        met_before_corr_pt = met_nom_pt
+        met_before_corr_phi = met_nom_phi
+
+        met_nom_pt, met_nom_phi = propagate_met(
+            corr_l1_pt,
+            corr_l1_phi,
+            corr_nom_full_pt,
+            corr_nom_full_phi,
+            met_nom_pt,
+            met_nom_phi,
+        )
+
+        _debug_compare_met(
+            self,
+            "MET change after CorrT1METJet Type-1 propagation",
+            met_before_corr_pt,
+            met_before_corr_phi,
+            met_nom_pt,
+            met_nom_phi,
+            rel_tol=0.0,
+        )
+
+    events = set_ak_column_f32(events, f"{met_name}.pt", met_nom_pt)
+    events = set_ak_column_f32(events, f"{met_name}.phi", met_nom_phi)
+
+    if input_met_pt is not None:
+        _debug_compare_met(
+            self,
+            f"final propagated {met_name} vs input {met_name}",
+            input_met_pt,
+            input_met_phi,
+            met_nom_pt,
+            met_nom_phi,
+        )
+
+    # --------------------------------------------------------------
+    # JEC variations on MET
+    # --------------------------------------------------------------
     for unc in self.jec_uncertainty_sources:
         for direction in ("up", "down"):
-            pt_field = f"pt_jec_{unc}_{direction}"
-            jetsum_pt_var, jetsum_phi_var = get_jetsum(tmp_events, pt_field)
+            _debug_log(self, f"processing JEC variation: {unc} {direction}")
 
-            met_pt_var, met_phi_var = propagate_met(
-                jetsum_pt_after,
-                jetsum_phi_after,
-                jetsum_pt_var,
-                jetsum_phi_var,
-                met_nominal_pt,
-                met_nominal_phi,
+            met_var_pt = met_nom_pt
+            met_var_phi = met_nom_phi
+
+            # main Jet collection
+            main_pt_var = events[jet_name][f"pt_noMu_jec_{unc}_{direction}"]
+            _debug_stats(self, f"{jet_name}.pt_noMu_jec_{unc}_{direction}", main_pt_var)
+
+            main_mask_var = (
+                (main_pt_var > min_pt_met_prop) &
+                ((events[jet_name].chEmEF + events[jet_name].neEmEF) < 0.9)
+            )
+            _debug_mask(self, f"main JEC mask {unc} {direction}", main_mask_var)
+
+            main_var_pt, main_var_phi = jetsum(
+                main_pt_var,
+                events[jet_name].phi_noMuRaw,
+                main_mask_var,
             )
 
-            events = set_ak_column_f32(events, f"{met_name}.pt_jec_{unc}_{direction}", met_pt_var)
-            events = set_ak_column_f32(events, f"{met_name}.phi_jec_{unc}_{direction}", met_phi_var)
+            _debug_stats(self, f"main_var_pt {unc} {direction}", main_var_pt)
+            _debug_stats(self, f"main_var_phi {unc} {direction}", main_var_phi)
 
+            met_var_pt, met_var_phi = propagate_met(
+                main_full_pt,
+                main_full_phi,
+                main_var_pt,
+                main_var_phi,
+                met_var_pt,
+                met_var_phi,
+            )
+
+            # CorrT1METJet collection
+            if corr_t1_present:
+                corr = events["CorrT1METJet"]
+                unc_eval = self.corr_t1_evaluators["junc"][unc]
+
+                unc_inputs = {
+                    "JetEta": corr.eta,
+                    "JetPt": corr_pt_noMuL1L2L3_nom,
+                }
+                corr_unc = ak_evaluate(
+                    unc_eval,
+                    *[unc_inputs[inp.name] for inp in unc_eval.inputs],
+                )
+                _debug_stats(self, f"CorrT1METJet unc {unc}", corr_unc)
+
+                scale = 1.0 + corr_unc if direction == "up" else 1.0 - corr_unc
+                corr_pt_var = corr_pt_noMuL1L2L3_nom * scale
+
+                _debug_stats(self, f"CorrT1METJet.pt_var {unc} {direction}", corr_pt_var)
+
+                corr_mask_var = (
+                    (corr_pt_var > min_pt_met_prop) &
+                    (corr.EmEF < 0.9)
+                )
+                _debug_mask(self, f"CorrT1METJet JEC mask {unc} {direction}", corr_mask_var)
+
+                corr_var_pt, corr_var_phi = jetsum(
+                    corr_pt_var,
+                    corr_phi_noMuRaw_nom,
+                    corr_mask_var,
+                )
+
+                _debug_stats(self, f"corr_var_pt {unc} {direction}", corr_var_pt)
+                _debug_stats(self, f"corr_var_phi {unc} {direction}", corr_var_phi)
+
+                met_var_pt, met_var_phi = propagate_met(
+                    corr_nom_full_pt,
+                    corr_nom_full_phi,
+                    corr_var_pt,
+                    corr_var_phi,
+                    met_var_pt,
+                    met_var_phi,
+                )
+
+            _debug_compare_met(
+                self,
+                f"{met_name} JEC {unc} {direction} vs nominal propagated {met_name}",
+                met_nom_pt,
+                met_nom_phi,
+                met_var_pt,
+                met_var_phi,
+                rel_tol=0.0,
+            )
+
+            events = set_ak_column_f32(events, f"{met_name}.pt_jec_{unc}_{direction}", met_var_pt)
+            events = set_ak_column_f32(events, f"{met_name}.phi_jec_{unc}_{direction}", met_var_phi)
+
+    # --------------------------------------------------------------
+    # JER variations on MET (main Jet collection only)
+    # --------------------------------------------------------------
     if self.dataset_inst.is_mc:
         for direction in ("up", "down"):
-            pt_field = f"pt_jer_{direction}"
-            jetsum_pt_var, jetsum_phi_var = get_jetsum(tmp_events, pt_field)
+            _debug_log(self, f"processing JER variation: {direction}")
 
-            met_pt_var, met_phi_var = propagate_met(
-                jetsum_pt_after,
-                jetsum_phi_after,
-                jetsum_pt_var,
-                jetsum_phi_var,
-                met_nominal_pt,
-                met_nominal_phi,
+            met_var_pt = met_nom_pt
+            met_var_phi = met_nom_phi
+
+            jer_scale = ak.nan_to_num(
+                events[jet_name][f"pt_jer_{direction}"] / events[jet_name].pt,
+                nan=1.0,
+            )
+            _debug_stats(self, f"jer_scale_{direction}", jer_scale)
+
+            main_pt_jer = events[jet_name].pt_noMuL1L2L3 * jer_scale
+            _debug_stats(self, f"main_pt_jer_{direction}", main_pt_jer)
+
+            main_mask_jer = (
+                (main_pt_jer > min_pt_met_prop) &
+                ((events[jet_name].chEmEF + events[jet_name].neEmEF) < 0.9)
+            )
+            _debug_mask(self, f"main JER mask {direction}", main_mask_jer)
+
+            main_jer_pt, main_jer_phi = jetsum(
+                main_pt_jer,
+                events[jet_name].phi_noMuRaw,
+                main_mask_jer,
             )
 
-            events = set_ak_column_f32(events, f"{met_name}.pt_jer_{direction}", met_pt_var)
-            events = set_ak_column_f32(events, f"{met_name}.phi_jer_{direction}", met_phi_var)
+            _debug_stats(self, f"main_jer_pt_{direction}", main_jer_pt)
+            _debug_stats(self, f"main_jer_phi_{direction}", main_jer_phi)
+
+            met_var_pt, met_var_phi = propagate_met(
+                main_full_pt,
+                main_full_phi,
+                main_jer_pt,
+                main_jer_phi,
+                met_var_pt,
+                met_var_phi,
+            )
+
+            _debug_compare_met(
+                self,
+                f"{met_name} JER {direction} vs nominal propagated {met_name}",
+                met_nom_pt,
+                met_nom_phi,
+                met_var_pt,
+                met_var_phi,
+                rel_tol=0.0,
+            )
+
+            events = set_ak_column_f32(events, f"{met_name}.pt_jer_{direction}", met_var_pt)
+            events = set_ak_column_f32(events, f"{met_name}.phi_jer_{direction}", met_var_phi)
 
     return events
 
 
-@jets_puppimet_only.init
-def jets_puppimet_only_init(self: Calibrator, **kwargs) -> None:
+@jme.init
+def jme_init(self: Calibrator, **kwargs) -> None:
     jec_cfg = self.get_jec_config()
     jec_sources = self.jec_uncertainty_sources
     if jec_sources is None:
@@ -1009,24 +1595,19 @@ def jets_puppimet_only_init(self: Calibrator, **kwargs) -> None:
         self.jec_uncertainty_sources = jec_sources
 
     self.uses |= {
-        f"{self.jet_name}.pt",
-        f"{self.jet_name}.eta",
-        f"{self.jet_name}.phi",
-        f"{self.jet_name}.area",
-        f"{self.jet_name}.rawFactor",
-        f"{self.met_name}.pt",
-        f"{self.met_name}.phi",
+        f"{self.raw_met_name}.pt",
+        f"{self.raw_met_name}.phi",
+        "run",
+        optional("fixedGridRhoFastjetAll"),
+        optional("Rho.fixedGridRhoFastjetAll"),
+        optional("CorrT1METJet.rawPt"),
+        optional("CorrT1METJet.eta"),
+        optional("CorrT1METJet.area"),
+        optional("CorrT1METJet.phi"),
+        optional("CorrT1METJet.muonSubtrFactor"),
+        optional("CorrT1METJet.muonSubtrDeltaPhi"),
+        optional("CorrT1METJet.EmEF"),
     }
-
-    if self.dataset_inst.is_mc:
-        lower_first = lambda s: s[0].lower() + s[1:] if s else s
-        gen_jet_idx_column = lower_first(self.gen_jet_name) + "Idx"
-        self.uses.add(f"{self.jet_name}.{gen_jet_idx_column}")
-        self.uses |= {
-            f"{self.gen_jet_name}.pt",
-            f"{self.gen_jet_name}.eta",
-            f"{self.gen_jet_name}.phi",
-        }
 
     self.produces |= {
         f"{self.met_name}.pt",
@@ -1058,9 +1639,18 @@ def jets_puppimet_only_init(self: Calibrator, **kwargs) -> None:
         return cls_dict
 
     self.jec_cls = jec.derive(
-        f"{self.jet_name}_internal_no_met_jec",
+        f"{self.jet_name}_internal_jec_no_met",
         cls_dict=get_attrs(
-            ["jet_name", "met_name", "raw_met_name", "get_jec_file", "get_jec_config"],
+            [
+                "jet_name",
+                "met_name",
+                "raw_met_name",
+                "get_jec_file",
+                "get_jec_config",
+                "debug",
+                "debug_max_events",
+                "debug_rel_tol",
+            ],
             extra={"propagate_met": False},
         ),
     )
@@ -1068,7 +1658,7 @@ def jets_puppimet_only_init(self: Calibrator, **kwargs) -> None:
 
     if self.dataset_inst.is_mc:
         self.jer_cls = jer.derive(
-            f"{self.jet_name}_internal_no_met_jer",
+            f"{self.jet_name}_internal_jer_no_met",
             cls_dict=get_attrs(
                 [
                     "jet_name",
@@ -1078,6 +1668,9 @@ def jets_puppimet_only_init(self: Calibrator, **kwargs) -> None:
                     "get_jer_config",
                     "get_jec_config",
                     "jec_uncertainty_sources",
+                    "debug",
+                    "debug_max_events",
+                    "debug_rel_tol",
                 ],
                 extra={"propagate_met": False},
             ),
@@ -1085,13 +1678,124 @@ def jets_puppimet_only_init(self: Calibrator, **kwargs) -> None:
         self.uses.add(self.jer_cls)
 
 
-jets_puppimet_only_ak4 = jets_puppimet_only.derive(
-    "jets_puppimet_only_ak4",
+@jme.requires
+def jme_requires(
+    self: Calibrator,
+    task: law.Task,
+    reqs: dict[str, DotDict[str, Any]],
+    **kwargs,
+) -> None:
+    if "external_files" in reqs:
+        return
+
+    from columnflow.tasks.external import BundleExternalFiles
+    reqs["external_files"] = BundleExternalFiles.req(task)
+
+
+@jme.setup
+def jme_setup(
+    self: Calibrator,
+    task: law.Task,
+    reqs: dict[str, DotDict[str, Any]],
+    inputs: dict[str, Any],
+    reader_targets: law.util.InsertableDict,
+    **kwargs,
+) -> None:
+    """
+    Build JEC evaluators for the CorrT1METJet auxiliary collection.
+    """
+    jec_file = self.get_jec_file(reqs["external_files"].files)
+    correction_set = load_correction_set(jec_file)
+
+    jec_cfg = self.get_jec_config()
+
+    def make_jme_keys(names, jec=jec_cfg, is_data=self.dataset_inst.is_data):
+        if is_data and jec.get("data_per_era", True):
+            jec_era = self.dataset_inst.get_aux("jec_era", None)
+            if jec_era is None:
+                era = self.dataset_inst.get_aux("era", None)
+                if era is None:
+                    raise ValueError(
+                        "JEC data key is requested to be era dependent, but neither jec_era nor era "
+                        f"is set for dataset {self.dataset_inst.name}.",
+                    )
+                jec_era = "Run" + era
+            jme_key = f"{jec.campaign}_{jec_era}_{jec.version}_DATA_{{name}}_{jec.jet_type}"
+        elif is_data:
+            jme_key = f"{jec.campaign}_{jec.version}_DATA_{{name}}_{jec.jet_type}"
+        else:
+            jme_key = f"{jec.campaign}_{jec.version}_MC_{{name}}_{jec.jet_type}"
+
+        return [jme_key.format(name=name) for name in names]
+
+    def get_main_levels() -> list[str]:
+        key = "levels_DATA" if self.dataset_inst.is_data else "levels_MC"
+        if key in jec_cfg:
+            return list(jec_cfg[key])
+        if "levels" in jec_cfg:
+            return list(jec_cfg["levels"])
+        raise ValueError(f"Could not find '{key}' in jec config.")
+
+    def get_l1_levels() -> list[str]:
+        if "levels_for_type1_met" in jec_cfg:
+            return list(jec_cfg["levels_for_type1_met"])
+        l1_levels = [lvl for lvl in get_main_levels() if lvl.startswith("L1")]
+        if l1_levels:
+            return l1_levels
+        raise ValueError(
+            "Could not determine L1-only JEC levels. Please define "
+            "'levels_for_type1_met' in the jec config."
+        )
+
+    full_levels = get_main_levels()
+    l1_levels = get_l1_levels()
+
+    full_keys = make_jme_keys(full_levels)
+    l1_keys = make_jme_keys(l1_levels)
+    junc_keys = make_jme_keys(self.jec_uncertainty_sources, is_data=False)
+
+    _debug_log(self, f"JME CorrT1METJet JEC file = {jec_file}")
+    _debug_log(self, f"JME CorrT1 full levels = {full_levels}")
+    _debug_log(self, f"JME CorrT1 L1 levels = {l1_levels}")
+    _debug_log(self, f"JME CorrT1 full keys = {full_keys}")
+    _debug_log(self, f"JME CorrT1 L1 keys = {l1_keys}")
+    _debug_log(self, f"JME CorrT1 uncertainty keys = {junc_keys}")
+
+    self.corr_t1_evaluators = {
+        "jec": get_evaluators(
+            correction_set,
+            full_keys,
+            attrs=[{"level": level} for level in full_levels],
+        ),
+        "jec_l1": get_evaluators(
+            correction_set,
+            l1_keys,
+            attrs=[{"level": level} for level in l1_levels],
+        ),
+        "junc": dict(
+            zip(
+                self.jec_uncertainty_sources,
+                get_evaluators(correction_set, junc_keys),
+            )
+        ),
+    }
+
+
+jme_ak4 = jme.derive(
+    "jme_ak4",
     cls_dict={
         "jet_name": "Jet",
         "gen_jet_name": "GenJet",
         "met_name": "PuppiMET",
         "raw_met_name": "RawPuppiMET",
-        "propagate_met": True,
+    },
+)
+
+jme_ak4_debug = jme_ak4.derive(
+    "jme_ak4_debug",
+    cls_dict={
+        "debug": True,
+        "debug_max_events": 1,
+        "debug_rel_tol": 0.01,
     },
 )

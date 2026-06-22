@@ -2,7 +2,7 @@
 # coding: utf-8
 
 """
-Configuration of the MSSM analysis.
+Configuration of the MSSM analysis
 """
 
 import functools
@@ -178,15 +178,19 @@ def add_run3(ana: od.Analysis,
     MASS_POINTS = read_bdt_masses()
 
     for mass in MASS_POINTS:
-        process_names.append(f"h_ggf_htt_{mass}")
-        process_names.append(f"bbh_htt_{mass}")
+        process_names.append(f"ggphi_phitt_{mass}")
+        process_names.append(f"bbphi_phitt_{mass}")
 
     for process_name in process_names:
         # add the process
         proc = cfg.add_process(procs.get(process_name))
         #for signal datasets create special tag
-        if process_name.startswith("h_"):
+        if process_name.startswith("ggphi_phitt_"):
             proc.add_tag("signal")
+            proc.add_tag("mc")
+        if process_name.startswith("bbphi_phitt_"):
+            proc.add_tag("signal")
+            proc.add_tag("mc")
         # add data-driven QCD process explicitly (no datasets attached)
         if "qcd" not in cfg.processes.names():
             cfg.add_process(qcd_proc)
@@ -423,14 +427,14 @@ def add_run3(ana: od.Analysis,
         "ZHto2Tau_UncorrelatedDecay_UnFiltered",
         ]
     for mass in MASS_POINTS:
-        dataset_names_2022preEE.append(f"h_ggf_htt_{mass}")
-        dataset_names_2022postEE.append(f"h_ggf_htt_{mass}")
-        dataset_names_2023preBPix.append(f"h_ggf_htt_{mass}")
-        dataset_names_2023postBPix.append(f"h_ggf_htt_{mass}")
-        dataset_names_2022preEE.append(f"bbh_htt_{mass}")
-        dataset_names_2022postEE.append(f"bbh_htt_{mass}")
-        dataset_names_2023preBPix.append(f"bbh_htt_{mass}")
-        dataset_names_2023postBPix.append(f"bbh_htt_{mass}")
+        dataset_names_2022preEE.append(f"ggphi_phitt_{mass}")
+        dataset_names_2022postEE.append(f"ggphi_phitt_{mass}")
+        dataset_names_2023preBPix.append(f"ggphi_phitt_{mass}")
+        dataset_names_2023postBPix.append(f"ggphi_phitt_{mass}")
+        dataset_names_2022preEE.append(f"bbphi_phitt_{mass}")
+        dataset_names_2022postEE.append(f"bbphi_phitt_{mass}")
+        dataset_names_2023preBPix.append(f"bbphi_phitt_{mass}")
+        dataset_names_2023postBPix.append(f"bbphi_phitt_{mass}")
 
     dataset_era = {
         "Summer22": dataset_names_2022preEE,
@@ -443,14 +447,16 @@ def add_run3(ana: od.Analysis,
     for dataset_name in dataset_names:
         # add the dataset
         dataset = cfg.add_dataset(campaign.get_dataset(dataset_name))
-        if dataset_name.startswith("h_ggf_htt_"):
+        if dataset_name.startswith("ggphi_phitt_"):
             dataset.add_tag("signal")
             dataset.add_tag("is_mc")
-        if dataset_name.startswith("bbh_htt_"):
+        if dataset_name.startswith("bbphi_phitt_"):
             dataset.add_tag("signal")
             dataset.add_tag("is_mc")
         if dataset.name.startswith("TTto"):
-            dataset.add_tag({"has_top", "ttbar", "tt"})    
+            dataset.add_tag({"has_top", "ttbar", "tt"})   
+        if dataset.name.startswith("DYto"):
+            dataset.add_tag({"dy"})  
         # for testing purposes, limit the number of files to 1
         for info in dataset.info.values():
             if limit_dataset_files:
@@ -542,35 +548,35 @@ def add_run3(ana: od.Analysis,
             "dy_ll_m50_2j",
             "dy_ll_m50",  
             ],
-        "h_ggf_htt_masses":["h_ggf_htt_60","h_ggf_htt_65","h_ggf_htt_70",
-                            "h_ggf_htt_75","h_ggf_htt_80","h_ggf_htt_85",
-                            "h_ggf_htt_90","h_ggf_htt_95","h_ggf_htt_100",
-                            "h_ggf_htt_105","h_ggf_htt_110","h_ggf_htt_115",
-                            "h_ggf_htt_120","h_ggf_htt_125","h_ggf_htt_130",
-                            "h_ggf_htt_135","h_ggf_htt_140","h_ggf_htt_160",
-                            "h_ggf_htt_180","h_ggf_htt_200","h_ggf_htt_250",
-                            "h_ggf_htt_300","h_ggf_htt_350","h_ggf_htt_400",
-                            "h_ggf_htt_450","h_ggf_htt_500","h_ggf_htt_600",
-                            "h_ggf_htt_700","h_ggf_htt_800","h_ggf_htt_900",
-                            "h_ggf_htt_1000","h_ggf_htt_1100","h_ggf_htt_1200",
-                            "h_ggf_htt_1400","h_ggf_htt_1600","h_ggf_htt_1800",
-                            "h_ggf_htt_2000","h_ggf_htt_2300","h_ggf_htt_2600",
-                            "h_ggf_htt_2900","h_ggf_htt_3200","h_ggf_htt_3500"
+        "ggphi_phitt_masses":["ggphi_phitt_60","ggphi_phitt_65","ggphi_phitt_70",
+                            "ggphi_phitt_75","ggphi_phitt_80","ggphi_phitt_85",
+                            "ggphi_phitt_90","ggphi_phitt_95","ggphi_phitt_100",
+                            "ggphi_phitt_105","ggphi_phitt_110","ggphi_phitt_115",
+                            "ggphi_phitt_120","ggphi_phitt_125","ggphi_phitt_130",
+                            "ggphi_phitt_135","ggphi_phitt_140","ggphi_phitt_160",
+                            "ggphi_phitt_180","ggphi_phitt_200","ggphi_phitt_250",
+                            "ggphi_phitt_300","ggphi_phitt_350","ggphi_phitt_400",
+                            "ggphi_phitt_450","ggphi_phitt_500","ggphi_phitt_600",
+                            "ggphi_phitt_700","ggphi_phitt_800","ggphi_phitt_900",
+                            "ggphi_phitt_1000","ggphi_phitt_1100","ggphi_phitt_1200",
+                            "ggphi_phitt_1400","ggphi_phitt_1600","ggphi_phitt_1800",
+                            "ggphi_phitt_2000","ggphi_phitt_2300","ggphi_phitt_2600",
+                            "ggphi_phitt_2900","ggphi_phitt_3200","ggphi_phitt_3500"
                             ],
-        "bbh_htt_masses": ["bbh_htt_60","bbh_htt_65","bbh_htt_70",
-                            "bbh_htt_75","bbh_htt_80","bbh_htt_85",
-                            "bbh_htt_90","bbh_htt_95","bbh_htt_100",
-                            "bbh_htt_105","bbh_htt_110","bbh_htt_115",
-                            "bbh_htt_120","bbh_htt_125","bbh_htt_130",
-                            "bbh_htt_135","bbh_htt_140","bbh_htt_160",
-                            "bbh_htt_180","bbh_htt_200","bbh_htt_250",
-                            "bbh_htt_300","bbh_htt_350","bbh_htt_400",
-                            "bbh_htt_450","bbh_htt_500","bbh_htt_600",
-                            "bbh_htt_700","bbh_htt_800","bbh_htt_900",
-                            "bbh_htt_1000","bbh_htt_1100","bbh_htt_1200",
-                            "bbh_htt_1400","bbh_htt_1600","bbh_htt_1800",
-                            "bbh_htt_2000","bbh_htt_2300","bbh_htt_2600",
-                            "bbh_htt_2900","bbh_htt_3200","bbh_htt_3500"
+        "bbphi_phitt_masses": ["bbphi_phitt_60","bbphi_phitt_65","bbphi_phitt_70",
+                            "bbphi_phitt_75","bbphi_phitt_80","bbphi_phitt_85",
+                            "bbphi_phitt_90","bbphi_phitt_95","bbphi_phitt_100",
+                            "bbphi_phitt_105","bbphi_phitt_110","bbphi_phitt_115",
+                            "bbphi_phitt_120","bbphi_phitt_125","bbphi_phitt_130",
+                            "bbphi_phitt_135","bbphi_phitt_140","bbphi_phitt_160",
+                            "bbphi_phitt_180","bbphi_phitt_200","bbphi_phitt_250",
+                            "bbphi_phitt_300","bbphi_phitt_350","bbphi_phitt_400",
+                            "bbphi_phitt_450","bbphi_phitt_500","bbphi_phitt_600",
+                            "bbphi_phitt_700","bbphi_phitt_800","bbphi_phitt_900",
+                            "bbphi_phitt_1000","bbphi_phitt_1100","bbphi_phitt_1200",
+                            "bbphi_phitt_1400","bbphi_phitt_1600","bbphi_phitt_1800",
+                            "bbphi_phitt_2000","bbphi_phitt_2300","bbphi_phitt_2600",
+                            "bbphi_phitt_2900","bbphi_phitt_3200","bbphi_phitt_3500"
                             ],
          "qcd": ["qcd"],
         }
@@ -715,8 +721,8 @@ def add_run3(ana: od.Analysis,
             "version": jec_version,
             "data_per_era": year == 2022,  # 2022 JEC has the era in the correction set name
             "jet_type": jet_type,
-            "levels_MC": ["L1FastJet", "L2Relative", "L3Absolute"], 
-            "levels_DATA": ["L1FastJet", "L2Relative","L3Absolute", "L2L3Residual"],
+            "levels_MC": ["L1FastJet", "L2Relative", "L3Absolute"], # "L3Absolute"
+            "levels_DATA": ["L1FastJet", "L2Relative", "L3Absolute", "L2L3Residual"], #"L3Absolute"
             "levels_for_type1_met": ["L1FastJet"], 
             "uncertainty_sources": [src for src, flag in all_jec_sources.items() if flag],
         },
@@ -1060,7 +1066,6 @@ def add_run3(ana: od.Analysis,
     jsonpog_dir = "/eos/user/a/anigamov/htt_corrections_mirror/jsonpog-integration_latest/POG/"
     jsonpog_tau_dir = "/eos/user/a/anigamov/htt_corrections_mirror/jsonpog-integration_tau_latest/POG"
     corr_dir = "/eos/user/a/anigamov/htt_corrections_mirror/"
-    # stiching_eos_path = "/eos/user/j/jmalvaso/SWAN_projects/higgs_MSSM/"
     #CMS Analysis Corrections Documentation: https://cms-analysis-corrections.docs.cern.ch/
     json_acd_path="/cvmfs/cms-griddata.cern.ch/cat/metadata/" 
     sz_path = "/afs/cern.ch/user/d/dmroy/public/ZpT_RecCorr_V5"
@@ -1188,9 +1193,21 @@ def add_run3(ana: od.Analysis,
     cfg.add_shift(name="pu_weight_up", id=17, type="shape")
     add_shift_aliases(cfg,"pu_weight",{"pu_weight": "pu_weight_{direction}"})
     
-    cfg.add_shift(name="Unclustered_weight_down", id=18, type="shape")
-    cfg.add_shift(name="Unclustered_weight_up", id=19, type="shape")
-    add_shift_aliases(cfg,"Unclustered_weight",{"Unclustered_weight": "Unclustered_weight_{direction}"})
+    cfg.add_shift(name="unclustered_up", id=18, type="shape", tags={"met"})
+    cfg.add_shift(name="unclustered_down", id=19, type="shape", tags={"met"})
+
+    add_shift_aliases(
+        cfg,
+        "unclustered",
+        {
+            f"{cfg.x.met_name}.pt": f"{cfg.x.met_name}.pt_{{name}}",
+            f"{cfg.x.met_name}.phi": f"{cfg.x.met_name}.sphi_{{name}}",
+
+            # needed if D_zeta, mT, fastMTT, pt_H read RecoilCorrMET
+            "RecoilCorrMET.pt": "RecoilCorrMET.pt_{name}",
+            "RecoilCorrMET.phi": "RecoilCorrMET.phi_{name}",
+        },
+    )
     # add column aliases for shift jec
     for i, (jec_source, flag) in enumerate(all_jec_sources.items()):
         if not flag:
@@ -1242,6 +1259,33 @@ def add_run3(ana: od.Analysis,
             f"{cfg.x.met_name}.phi": f"{cfg.x.met_name}.phi_{{name}}",
         },
     )
+    ############################
+    ### Theory uncertainties ###
+    ############################
+    
+    cfg.x.lhe_variations = {
+        "Scale_muR_up"      : 7, # muR 2.0, muF 1.0
+        "Scale_muR_down"    : 1, # muR 0.5, muF 1.0
+        "Scale_muF_up"      : 5, # muR 1.0, muF 2.0
+        "Scale_muF_down"    : 3, # muR 1.0, muF 0.5 
+    }
+    for i, the_name in enumerate(cfg.x.lhe_variations.keys()):
+        cfg.add_shift(name='_'.join(('CMS',the_name)) , id=900+i, type="shape", tags={"theo"})
+    
+    add_shift_aliases(cfg, "CMS_Scale_muR", {"lhe_weight": "lhe_weight_Scale_muR_{direction}"})
+    add_shift_aliases(cfg, "CMS_Scale_muF", {"lhe_weight": "lhe_weight_Scale_muF_{direction}"})
+        
+    cfg.x.ps_variations = {    
+        "PS_ISR_up"         : 0, # ISR = 2, FSR = 1
+        "PS_ISR_down"       : 2, # ISR = 0.5, FSR = 1
+        "PS_FSR_up"         : 1, # ISR = 1, FSR = 2
+        "PS_FSR_down"       : 3, # ISR = 1, FSR = 2
+    }
+    for i, the_name in enumerate(cfg.x.ps_variations.keys()):
+        cfg.add_shift(name='_'.join(('CMS',the_name)) , id=950+i, type="shape", tags={"theo"})
+    
+    add_shift_aliases(cfg, "CMS_PS_ISR", {"ps_weight": "ps_weight_PS_ISR_{direction}"})
+    add_shift_aliases(cfg, "CMS_PS_FSR", {"ps_weight": "ps_weight_PS_FSR_{direction}"})
     
     ################################################################################################
     # btag weight systematics saved as:
@@ -1263,13 +1307,32 @@ def add_run3(ana: od.Analysis,
             f"btag_weight_{unc}",
             {"btag_weight": f"btag_weight_{unc}_{{direction}}"},
         )
+    cfg.add_shift(name="recoilresp_up", id=7000, type="shape", tags={"met_recoil"})
+    cfg.add_shift(name="recoilresp_down", id=7001, type="shape", tags={"met_recoil"})
+    add_shift_aliases(
+        cfg,
+        "recoilresp",
+        {
+            f"{cfg.x.met_name}.pt": "RecoilCorrMET.pt_{name}",
+            f"{cfg.x.met_name}.phi": "RecoilCorrMET.phi_{name}",
+        },
+    )
+
+    cfg.add_shift(name="recoilres_up", id=7002, type="shape", tags={"met_recoil"})
+    cfg.add_shift(name="recoilres_down", id=7003, type="shape", tags={"met_recoil"})
+    add_shift_aliases(
+        cfg,
+        "recoilres",
+        {
+            f"{cfg.x.met_name}.pt": "RecoilCorrMET.pt_{name}",
+            f"{cfg.x.met_name}.phi": "RecoilCorrMET.phi_{name}",
+        },
+    )
     # event weight columns as keys in an OrderedDict, mapped to shift instances they depend on
     get_shifts = functools.partial(get_shifts_from_sources, cfg)   
 
     cfg.x.event_weights = DotDict({
         "normalization_weight": [],
-        # "filter_weight": [],
-        # "mc_weight":[],
         "tau_weight": get_shifts("tau_weight"),
         "pu_weight": get_shifts("pu_weight"),
         "zpt_weight":get_shifts("zpt_weight"),
@@ -1279,7 +1342,8 @@ def add_run3(ana: od.Analysis,
         "Trigger_SF_weight": get_shifts("Trigger_SF_weight"),
         "stitching_weight": [],
         "btag_weight":get_shifts(*(f"btag_weight_{unc}" for unc in cfg.x.btag_unc_names)),
-        "Unclustered_weight": get_shifts("Unclustered_weight"),
+        "lhe_weight" : get_shifts("CMS_Scale_muR","CMS_Scale_muF"),
+        "ps_weight"  : get_shifts("CMS_PS_ISR","CMS_PS_FSR"),
     })
     
     # versions per task family, either referring to strings or to callables receving the invoking
@@ -1291,13 +1355,13 @@ def add_run3(ana: od.Analysis,
             
         
     cfg.x.versions = {
-        "cf.CalibrateEvents"    : set_version,
-        "cf.SelectEvents"       : set_version,
-        "cf.MergeSelectionStats": set_version,
-        "cf.MergeSelectionMasks": set_version,
-        "cf.ReduceEvents"       : set_version,
-        "cf.MergeReductionStats": set_version,
-        "cf.MergeReducedEvents" : set_version,
+        "task_cf.CalibrateEvents"    : set_version,
+        "task_cf.SelectEvents"       : set_version,
+        "task_cf.MergeSelectionStats": set_version,
+        "task_cf.MergeSelectionMasks": set_version,
+        "task_cf.ReduceEvents"       : set_version,
+        "task_cf.MergeReductionStats": set_version,
+        "task_cf.MergeReducedEvents" : set_version,
     }
     # channels
     # processing only one channel at once, electron calibration is channel dependent!
@@ -1327,7 +1391,7 @@ def add_run3(ana: od.Analysis,
                                 "DYto2L_M_50_1J_amcatnloFXFX": "NLO",
                                 "DYto2L_M_50_2J_amcatnloFXFX": "NLO",
                                 "DYto2L_M_50_amcatnloFXFX": "NLO",
-                                " DYto2L_M_10to50_amcatnloFXFX":"NLO",
+                                "DYto2L_M_10to50_amcatnloFXFX":"NLO",
                                 # DY -> tautau (POWHEG + aMC@NLO)
                                 "DYto2Tau_MLL_50_0J_amcatnloFXFX": "NLO",
                                 "DYto2Tau_MLL_50_1J_amcatnloFXFX": "NLO",
@@ -1338,7 +1402,20 @@ def add_run3(ana: od.Analysis,
                                 "WtoLNu_3J_madgraphMLM": "LO",
                                 "WtoLNu_4J_madgraphMLM": "LO",
                                 "WtoLNu_madgraphMLM": "LO",
+                                # SM Higgs ggH and VBF
+                                "GluGluHto2Tau_UncorrelatedDecay_SM_UnFiltered_ProdAndDecay": "NLO",
+                                "VBFHto2Tau_UncorrelatedDecay_UnFiltered" : "NLO",
+                                # VH production with H->tautau decays, uncorrelated decay mode, no filter at gen level
+                                "WminusHto2Tau_UncorrelatedDecay_UnFiltered" : "NLO",
+                                "WplusHto2Tau_UncorrelatedDecay_UnFiltered" : "NLO",
+                                "ZHto2Tau_UncorrelatedDecay_UnFiltered" : "NLO",
                             })
+    for mass in MASS_POINTS:
+        cfg.x.met_recoil["datasets"].update({
+            f"ggphi_phitt_{mass}": "NLO",
+            f"bbphi_phitt_{mass}": "NLO",
+        })
+        
     stitch_samples = [
             "DYto2L_M_50_amcatnloFXFX",
             "DYto2L_M_50_0J_amcatnloFXFX",
@@ -1389,7 +1466,17 @@ def add_run3(ana: od.Analysis,
             if shift_inst.has_tag(("jec", "jer"))
         ],
         "btag_sf": [
-            shift_inst.name for shift_inst in get_shifts(*(f"btag_weight_{unc}" for unc in cfg.x.btag_unc_names))
+            shift_inst.name for shift_inst in get_shifts(
+                *(f"btag_weight_{unc}" for unc in cfg.x.btag_unc_names)
+            )
+        ],
+        "met": [
+            shift_inst.name for shift_inst in cfg.shifts
+            if shift_inst.has_tag("met")
+        ],
+        "met_recoil": [
+            shift_inst.name for shift_inst in cfg.shifts
+            if shift_inst.has_tag("met_recoil")
         ],
     }
     

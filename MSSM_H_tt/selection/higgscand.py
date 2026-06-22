@@ -29,13 +29,11 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
     } | {
             f"Muon.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge",
-                "rawIdx","IPx", "IPy", "IPz","ip_sig", "jetIdx"
-            ] 
+                "rawIdx","IPx", "IPy", "IPz","ip_sig", "jetIdx"] 
     } | {
             f"Electron.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge", 
-                "pfRelIso03_all", "rawIdx", "IPx", "IPy", "IPz","ip_sig", "jetIdx"
-            ] 
+                "pfRelIso03_all", "rawIdx", "IPx", "IPy", "IPz","ip_sig", "jetIdx"] 
         } | {optional("Tau.genPartFlav")} | {hlt_path_matching},
     produces={
         'hcand_*'

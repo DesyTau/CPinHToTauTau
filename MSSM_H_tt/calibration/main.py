@@ -5,7 +5,7 @@ import functools
 
 from columnflow.calibration import Calibrator, calibrator
 from MSSM_H_tt.calibration.jets import jec, jer
-from MSSM_H_tt.calibration.type1_met_corr import jets_puppimet_only_ak4
+from MSSM_H_tt.calibration.type1_met_corr import jme_ak4, jme_ak4_debug
 from MSSM_H_tt.calibration.tau import tau_energy_scale
 from MSSM_H_tt.calibration.electron import electron_smearing_scaling
 from columnflow.production.cms.seeds import deterministic_seeds
@@ -24,7 +24,8 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
     uses={
        jec,
        jer,
-       jets_puppimet_only_ak4,
+       jme_ak4,
+    #  jme_ak4_debug,
        tau_energy_scale,
        electron_smearing_scaling,
        deterministic_seeds,
@@ -35,10 +36,6 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
        "Jet.rawFactor",
        "PuppiMET.pt",
        "PuppiMET.phi",
-       "PuppiMET.ptUnclusteredUp",
-       "PuppiMET.phiUnclusteredUp",
-       "PuppiMET.ptUnclusteredDown",
-       "PuppiMET.phiUnclusteredDown",
        "Electron.phi",
        "Tau.phi",
        "Tau.pt",
@@ -49,7 +46,8 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
     produces={
         jec,
         jer,
-        jets_puppimet_only_ak4,
+        jme_ak4,
+        # jme_ak4_debug,
         tau_energy_scale,
         electron_smearing_scaling,
         deterministic_seeds,
@@ -66,21 +64,13 @@ def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     if self.dataset_inst.is_mc and (self.config_inst.channels.names()[0] != "emu"):
         print("Performing tau energy scale correction...")
         events = self[tau_energy_scale](events, **kwargs)
-    
-    puppimet_pt_rel_unc_up = (events.PuppiMET.ptUnclusteredUp/events.PuppiMET.pt)
-    puppimet_pt_rel_unc_down = (events.PuppiMET.ptUnclusteredDown/events.PuppiMET.pt)
-    puppimet_phi_rel_unc_up = (events.PuppiMET.phiUnclusteredUp/events.PuppiMET.phi)
-    puppimet_phi_rel_unc_down = (events.PuppiMET.phiUnclusteredDown/events.PuppiMET.phi)
     print("Performing JEC...")
     events = self[jec](events, **kwargs)
     if self.dataset_inst.is_mc:
         print("Performing JER...")
         events = self[jer](events, **kwargs)
     print("Propagating JEC+JER to PuppiMET once, without modifying Jet branches...")
-    events = self[jets_puppimet_only_ak4](events, **kwargs)
-    events = set_ak_column_f32(events, "PuppiMET.ptUnclusteredUp", ak.nan_to_num(events.PuppiMET.pt*puppimet_pt_rel_unc_up, nan=EMPTY_FLOAT, posinf=EMPTY_FLOAT, neginf=EMPTY_FLOAT ))
-    events = set_ak_column_f32(events, "PuppiMET.phiUnclusteredUp", ak.nan_to_num(events.PuppiMET.phi*puppimet_phi_rel_unc_up, nan=EMPTY_FLOAT, posinf=EMPTY_FLOAT, neginf=EMPTY_FLOAT))
-    events = set_ak_column_f32(events, "PuppiMET.ptUnclusteredDown", ak.nan_to_num(events.PuppiMET.pt*puppimet_pt_rel_unc_down, nan=EMPTY_FLOAT, posinf=EMPTY_FLOAT, neginf=EMPTY_FLOAT))
-    events = set_ak_column_f32(events, "PuppiMET.phiUnclusteredDown", ak.nan_to_num(events.PuppiMET.phi*puppimet_phi_rel_unc_down, nan=EMPTY_FLOAT, posinf=EMPTY_FLOAT, neginf=EMPTY_FLOAT))
 
+    events = self[jme_ak4](events, **kwargs)
+    
     return events

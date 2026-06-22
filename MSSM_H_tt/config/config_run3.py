@@ -132,7 +132,7 @@ def add_run3(ana: od.Analysis,
     ]
     signal_masses = [60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 160, 180, 200, 250, 300, 350, 400, 450, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1400, 1600, 1800, 2000, 2300, 2600, 2900, 3200, 3500]
     for mass in signal_masses:
-        process_names.append(f"h_ggf_htt_{mass}")
+        process_names.append(f"ggphi_phitt_{mass}")
 
     for process_name in process_names:
         # add the process
@@ -296,10 +296,10 @@ def add_run3(ana: od.Analysis,
         #signal
         ]
     for mass in signal_masses:
-        dataset_names_2022preEE.append(f"h_ggf_htt_{mass}")
-        dataset_names_2022postEE.append(f"h_ggf_htt_{mass}")
-        dataset_names_2023preBPix.append(f"h_ggf_htt_{mass}")
-        dataset_names_2023postBPix.append(f"h_ggf_htt_{mass}")
+        dataset_names_2022preEE.append(f"ggphi_phitt_{mass}")
+        dataset_names_2022postEE.append(f"ggphi_phitt_{mass}")
+        dataset_names_2023preBPix.append(f"ggphi_phitt_{mass}")
+        dataset_names_2023postBPix.append(f"ggphi_phitt_{mass}")
 
     dataset_era = {
         "Summer22": dataset_names_2022preEE,
@@ -353,20 +353,20 @@ def add_run3(ana: od.Analysis,
         "st"   : ["st_tchannel_tbar","st_tchannel_t","st_schannel_tbar_lep","st_schannel_t_lep",
                "st_twchannel_t_fh","st_twchannel_t_sl","st_twchannel_t_dl",
                "st_twchannel_tbar_sl","st_twchannel_tbar_dl","st_twchannel_tbar_fh","st_schannel_t_lep","st_schannel_tbar_lep"],
-    "h_ggf_htt_masses": ["h_ggf_htt_60","h_ggf_htt_65","h_ggf_htt_70",
-                         "h_ggf_htt_75","h_ggf_htt_80","h_ggf_htt_85",
-                         "h_ggf_htt_90","h_ggf_htt_95","h_ggf_htt_100",
-                         "h_ggf_htt_105","h_ggf_htt_110","h_ggf_htt_115",
-                         "h_ggf_htt_120","h_ggf_htt_125","h_ggf_htt_130",
-                         "h_ggf_htt_135","h_ggf_htt_140","h_ggf_htt_160",
-                         "h_ggf_htt_180","h_ggf_htt_200","h_ggf_htt_250",
-                         "h_ggf_htt_300","h_ggf_htt_350","h_ggf_htt_400",
-                         "h_ggf_htt_450","h_ggf_htt_500","h_ggf_htt_600",
-                         "h_ggf_htt_700","h_ggf_htt_800","h_ggf_htt_900",
-                         "h_ggf_htt_1000","h_ggf_htt_1100","h_ggf_htt_1200",
-                         "h_ggf_htt_1400","h_ggf_htt_1600","h_ggf_htt_1800",
-                         "h_ggf_htt_2000","h_ggf_htt_2300","h_ggf_htt_2600",
-                         "h_ggf_htt_2900","h_ggf_htt_3200","h_ggf_htt_3500"],
+    "ggphi_phitt_masses": ["ggphi_phitt_60","ggphi_phitt_65","ggphi_phitt_70",
+                         "ggphi_phitt_75","ggphi_phitt_80","ggphi_phitt_85",
+                         "ggphi_phitt_90","ggphi_phitt_95","ggphi_phitt_100",
+                         "ggphi_phitt_105","ggphi_phitt_110","ggphi_phitt_115",
+                         "ggphi_phitt_120","ggphi_phitt_125","ggphi_phitt_130",
+                         "ggphi_phitt_135","ggphi_phitt_140","ggphi_phitt_160",
+                         "ggphi_phitt_180","ggphi_phitt_200","ggphi_phitt_250",
+                         "ggphi_phitt_300","ggphi_phitt_350","ggphi_phitt_400",
+                         "ggphi_phitt_450","ggphi_phitt_500","ggphi_phitt_600",
+                         "ggphi_phitt_700","ggphi_phitt_800","ggphi_phitt_900",
+                         "ggphi_phitt_1000","ggphi_phitt_1100","ggphi_phitt_1200",
+                         "ggphi_phitt_1400","ggphi_phitt_1600","ggphi_phitt_1800",
+                         "ggphi_phitt_2000","ggphi_phitt_2300","ggphi_phitt_2600",
+                         "ggphi_phitt_2900","ggphi_phitt_3200","ggphi_phitt_3500"],
     }
 
     # dataset groups for conveniently looping over certain datasets

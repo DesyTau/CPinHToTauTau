@@ -19,18 +19,10 @@ def mT(p4_1, p4_2):
         """Transverse mass between two four‑vectors p4_1 and p4_2."""
         dphi = delta_phi(p4_1.phi, p4_2.phi)
         return np.sqrt(2 * p4_1.pt * p4_2.pt * (1 - np.cos(dphi)))
-# def hcand_mt(lep: ak.Array, MET: ak.Array) -> ak.Array:
-#     print("Producing mT...")
-#     delta_phi = lep.phi - MET.phi
-#     delta_phi = ak.where(delta_phi > np.pi, delta_phi - 2*np.pi, delta_phi)
-#     delta_phi = ak.where(delta_phi < -np.pi, delta_phi + 2*np.pi, delta_phi)
-#     cos_dphi = np.cos(delta_phi)
-#     mT_values = np.sqrt(2*lep.pt*MET.pt * (1 - cos_dphi))
-#     return ak.fill_none(mT_values, EMPTY_FLOAT)
 
 @producer(
     uses={
-        'hcand_*', 'PuppiMET*'
+        'hcand_*', 'RecoilCorrMET*'
     },
     produces={
         'hcand_*'
@@ -63,7 +55,7 @@ def hcand_fields(
 
 @producer(
     uses={
-        'hcand_*', 'PuppiMET*'
+        'hcand_*', 'RecoilCorrMET*'
     },
     produces={
         'hcand_*'
@@ -76,11 +68,11 @@ def hcand_mt(self: Producer,
     print("producing mT...")
     channels = self.config_inst.channels.names()
     ch_objects = self.config_inst.x.ch_objects
-    MET = events.PuppiMET  
+    MET = events.RecoilCorrMET  
     for ch_str in channels:
         hcand = events[f'hcand_{ch_str}']
         p4 = {}
-        # met_filled = ak.fill_none(events.PuppiMET, 0)
+        # met_filled = ak.fill_none(events.RecoilCorrMET, 0)
         for the_lep in hcand.fields:
             if the_lep in ['lep0', 'lep1']:
                 p4[the_lep] = get_lep_p4(hcand[the_lep])
@@ -99,7 +91,14 @@ def hcand_mt(self: Producer,
         
         events = set_ak_column(events, f'hcand_{ch_str}', hcand) 
 
-    return events 
+    return events
 
+@hcand_mt.init
+def hcand_mt_init(self: Producer) -> None:
+    self.shifts |= {
+        shift_inst.name
+        for shift_inst in self.config_inst.shifts
+        if shift_inst.has_tag(("met", "met_recoil"))
+    }
     
    

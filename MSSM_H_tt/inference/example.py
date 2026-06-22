@@ -86,15 +86,15 @@ def example(self):
             "dy_m50toinf_2j",
             "dy_m50toinf",  
             ],
-       "h_ggf_htt" : ["h_ggf_htt"],
-       "bbh_htt" : ["bbh_htt"],
+       "ggphi_phitt" : ["ggphi_phitt"],
+       "bbphi_phitt" : ["bbphi_phitt"],
     }
     
     signal_masses = [60, 65, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 160, 180, 200, 250, 300, 350, 400, 450, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1400, 1600, 1800, 2000, 2300, 2600, 2900, 3200, 3500]
     for m in signal_masses:
-        key = f"h_ggf_htt_{m}"
+        key = f"ggphi_phitt_{m}"
         process_vs_dataset_names[key] = [key]
-        key = f"bbh_htt_{m}"
+        key = f"bbphi_phitt_{m}"
         process_vs_dataset_names[key] = [key]
         
     process_vs_dataset_names["qcd"] = [""]
@@ -106,9 +106,9 @@ def example(self):
         is_signal = False
         data_driven = False
 
-        if "h_ggf_htt_" in process_name: 
+        if "ggphi_phitt_" in process_name: 
             is_signal = True
-        if "bbh_htt_" in process_name: 
+        if "bbphi_phitt_" in process_name: 
             is_signal = True
         if process_name == "qcd": #or process_name == "jet_fakes": 
             data_driven = True

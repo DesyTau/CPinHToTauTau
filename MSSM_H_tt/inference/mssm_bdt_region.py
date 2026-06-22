@@ -27,19 +27,9 @@ class MSSM_model(HCPModelBase):
     # Keep the combine/datacard process name explicit and consistent.
     qcd_combine_name = "qcd"
 
-    # Specialization knobs for derived inference models.
-    signal_mass = None          # e.g. 100
-    signal_kind = None          # None, "ggphi", or "bbphi"
-
-    # Supported values:
-    #
-    #   None
-    #   "sig_vs_disc_ggphi"
-    #   "sig_vs_disc_bbphi"
-    #   "dy"
-    #   "tt"
-    #
-    bdt_discriminant = None
+    # Specialization knobs for derived inference models
+    signal_mass = None      # e.g. 105
+    signal_kind = None      # None, "ggphi", or "bbphi"
 
     processes: list = []
     config_categories: list = []
@@ -67,38 +57,28 @@ class MSSM_model(HCPModelBase):
 
     def _get_config_insts(self):
         config_insts = getattr(self, "config_insts", None)
-
         if config_insts:
             return list(config_insts)
 
         config_insts = []
-
         for cfg in getattr(self, "config", []):
             if isinstance(cfg, (list, tuple, set)):
                 config_insts.extend(cfg)
             else:
                 config_insts.append(cfg)
-
         return config_insts
 
     @staticmethod
     def _dedup_keep_order(seq):
         seen = set()
         out = []
-
         for x in seq:
             if x not in seen:
                 seen.add(x)
                 out.append(x)
-
         return out
 
-    def _resolve_representative_process(
-        self,
-        config_inst,
-        preferred_process,
-        dataset_processes,
-    ):
+    def _resolve_representative_process(self, config_inst, preferred_process, dataset_processes):
         """
         Return a valid config-process name to be used in process_config_spec(process=...).
 
@@ -116,7 +96,6 @@ class MSSM_model(HCPModelBase):
 
         if len(dataset_processes) == 1:
             only_proc = dataset_processes[0]
-
             try:
                 config_inst.get_process(only_proc)
                 return only_proc
@@ -129,10 +108,9 @@ class MSSM_model(HCPModelBase):
         data_prefixes = {
             "etau": ["data_egamma_", "data_e_"],
             "mutau": ["data_mu_", "data_singlemu_"],
-            "emu": ["data_egamma_", "data_mu_"],
+            "emu": ["data_egamma_", "data_mu_"],  # add "data_muoneg_" if needed
             "tautau": ["data_tau_"],
         }
-
         return data_prefixes.get(ch, [f"data_{ch}_"])
 
     def _get_data_datasets(self, config_inst, ch):
@@ -268,7 +246,6 @@ class MSSM_model(HCPModelBase):
         for m in self.get_mass_points():
             if self.signal_kind in (None, "ggphi"):
                 g = f"ggphi_phitt_{m}"
-
                 self.proc_map[g] = {
                     "process": g,
                     "dataset_processes": [g],
@@ -278,7 +255,6 @@ class MSSM_model(HCPModelBase):
 
             if self.signal_kind in (None, "bbphi"):
                 b = f"bbphi_phitt_{m}"
-
                 self.proc_map[b] = {
                     "process": b,
                     "dataset_processes": [b],
@@ -296,103 +272,15 @@ class MSSM_model(HCPModelBase):
         cfg0 = config_insts[0]
         ch = cfg0.channels.names()[0]
 
-        # New datacard mode.
-        #
-        # Four one-category datacard models per mass point:
-        #
-        # 1. ggphi extraction:
-        #      category = cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
-        #      variable = bdt_D_sig_vs_Disc_ggphi_M{mass}
-        #
-        # 2. bbphi extraction:
-        #      category = cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
-        #      variable = bdt_D_sig_vs_Disc_bbphi_M{mass}
-        #
-        # 3. DY region:
-        #      category = cat_{ch}_sr__bdt_dy_M{mass}
-        #      variable = bdt_D_DY_M{mass}
-        #
-        # 4. TT region:
-        #      category = cat_{ch}_sr__bdt_tt_M{mass}
-        #      variable = bdt_D_TT_M{mass}
-        #
-        if self.bdt_discriminant is not None:
-            valid_discriminants = {
-                "sig_vs_disc_ggphi",
-                "sig_vs_disc_bbphi",
-                "dy",
-                "tt",
-            }
-
-            if self.bdt_discriminant not in valid_discriminants:
-                raise ValueError(
-                    f"Invalid bdt_discriminant '{self.bdt_discriminant}'. "
-                    f"Valid values are: {sorted(valid_discriminants)}"
-                )
-
-            masses = self.get_mass_points()
-
-            if len(masses) != 1:
-                raise ValueError(
-                    "The one-category datacard setup requires exactly one mass point. "
-                    "Use a derived model with signal_mass set, e.g. "
-                    "MSSM_model_D_sig_vs_Disc_ggphi_M100."
-                )
-
-            mass = masses[0]
-
-            card_map = {
-                "sig_vs_disc_ggphi": {
-                    "category": f"cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}",
-                    "variable": f"bdt_D_sig_vs_Disc_ggphi_M{mass}",
-                },
-                "sig_vs_disc_bbphi": {
-                    "category": f"cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}",
-                    "variable": f"bdt_D_sig_vs_Disc_bbphi_M{mass}",
-                },
-                "dy": {
-                    "category": f"cat_{ch}_sr__bdt_dy_M{mass}",
-                    "variable": f"bdt_D_DY_M{mass}",
-                },
-                "tt": {
-                    "category": f"cat_{ch}_sr__bdt_tt_M{mass}",
-                    "variable": f"bdt_D_TT_M{mass}",
-                },
-            }
-
-            card_spec = card_map[self.bdt_discriminant]
-
-            category_name = card_spec["category"]
-            variable_name = card_spec["variable"]
-
-            config_data = {}
-
-            for config_inst in config_insts:
-                data_datasets = self._get_data_datasets(config_inst, ch)
-
-                config_data[config_inst.name] = self.category_config_spec(
-                    category=category_name,
-                    variable=variable_name,
-                    data_datasets=data_datasets,
-                )
-
-            self.add_category(
-                name=category_name,
-                config_data=config_data,
-                mc_stats=True,
-                empty_bin_value=0.0,
-            )
-
-            return
-
-        # Legacy mode kept for the unspecialized base model.
         category_kinds = []
 
+        # keep the existing signal_kind-dependent behavior for signal-optimized regions
         if self.signal_kind in (None, "ggphi"):
             category_kinds.append("ggphi")
         if self.signal_kind in (None, "bbphi"):
             category_kinds.append("bbphi")
 
+        # always add DY and TT categories
         category_kinds.extend(["dy", "tt"])
         category_kinds = self._dedup_keep_order(category_kinds)
 
@@ -479,7 +367,6 @@ class MSSM_model(HCPModelBase):
                             strategy="all",
                         )
                     ]
-
                     dataset_names.extend(dsets)
 
                 dataset_names = self._dedup_keep_order(dataset_names)
@@ -526,7 +413,6 @@ class MSSM_model(HCPModelBase):
 
         cfg0 = config_insts[0]
         ch_name = cfg0.channels.names()[0] if getattr(cfg0, "channels", None) else ""
-
         has_tau = "tau" in ch_name and ch_name != "emu"
         has_mu = "mu" in ch_name or ch_name in ("emu", "mutau")
         has_e = "e" in ch_name or ch_name in ("emu", "etau")
@@ -549,7 +435,6 @@ class MSSM_model(HCPModelBase):
 
         lumi_uncs = []
         seen_uncs = set()
-
         for cfg in config_insts:
             for unc_name in cfg.x.luminosity.uncertainties:
                 if unc_name not in seen_uncs:
@@ -565,22 +450,13 @@ class MSSM_model(HCPModelBase):
         for unc_name in lumi_uncs:
             ref_eff = None
             ref_cfg = None
-
             for cfg in config_insts:
                 lumi = cfg.x.luminosity
-
                 if unc_name not in lumi.uncertainties:
                     continue
-
-                eff = lumi.get(
-                    names=unc_name,
-                    direction=("down", "up"),
-                    factor=True,
-                )
-
+                eff = lumi.get(names=unc_name, direction=("down", "up"), factor=True)
                 if ref_eff is None:
-                    ref_eff = eff
-                    ref_cfg = cfg.name
+                    ref_eff, ref_cfg = eff, cfg.name
                 else:
                     if eff != ref_eff:
                         raise ValueError(
@@ -646,10 +522,7 @@ class MSSM_model(HCPModelBase):
             return src
 
         def _default_shape_scope() -> list[str]:
-            if self.use_qcd_shape_uncertainties:
-                return list(all_processes)
-
-            return list(non_qcd_processes)
+            return list(all_processes) if self.use_qcd_shape_uncertainties else list(non_qcd_processes)
 
         def _recoil_shape_scope() -> list[str]:
             """
@@ -686,7 +559,6 @@ class MSSM_model(HCPModelBase):
                     "dy_tt_m50",
                     "dy_lep",
                 }
-
                 return [
                     p for p in default
                     if p not in excluded_theory_processes
@@ -758,14 +630,10 @@ class MSSM_model(HCPModelBase):
             pass
 
         shape_sources = []
-
         for src in expected_sources:
             if src in lumi_uncs or src == "nominal":
                 continue
-
-            if src not in shape_sources and any(
-                _has_shift_source(cfg, src) for cfg in config_insts
-            ):
+            if src not in shape_sources and any(_has_shift_source(cfg, src) for cfg in config_insts):
                 shape_sources.append(src)
 
         exp_group = (
@@ -773,7 +641,6 @@ class MSSM_model(HCPModelBase):
             if hasattr(self, "add_parameter_group")
             else "experiment"
         )
-
         th_group = (
             ["theory", "shape_nuisances"]
             if hasattr(self, "add_parameter_group")
@@ -784,21 +651,17 @@ class MSSM_model(HCPModelBase):
             return src in theory_shape_sources
 
         added = {}
-
         for src in shape_sources:
             proc_scope = _process_scope(src)
-
             if not proc_scope:
                 continue
 
             nuis = _nuis_name(src)
-
             if nuis in added and added[nuis] != src:
                 raise ValueError(
                     f"nuisance name collision: '{nuis}' would be used for both "
                     f"'{added[nuis]}' and '{src}'. Adjust _nuis_name mapping."
                 )
-
             added[nuis] = src
 
             config_data = {
@@ -806,7 +669,6 @@ class MSSM_model(HCPModelBase):
                 for cfg in config_insts
                 if _has_shift_source(cfg, src)
             }
-
             if not config_data:
                 continue
 
@@ -856,7 +718,6 @@ def MSSM_model_no_shifts(self):
             (parameter.type.is_shape and not parameter.transformations.any_from_rate)
             or (parameter.type.is_rate and parameter.transformations.any_from_shape)
         )
-
         if remove:
             self.remove_parameter(
                 parameter.name,
@@ -910,92 +771,27 @@ def MSSM_model_bin_opt(self):
 # mass- and production-specific derived models
 # -----------------------------------------------------------------------------
 
-
 for _m in read_bdt_masses():
-    # -------------------------------------------------------------------------
-    # 1. ggphi extraction
-    #
-    # category:
-    #   cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
-    #
-    # variable:
-    #   bdt_D_sig_vs_Disc_ggphi_M{mass}
-    #
-    # signal:
-    #   ggphi_phitt_{mass}
-    # -------------------------------------------------------------------------
+    globals()[f"MSSM_model_M{_m}"] = MSSM_model.derive(
+        f"MSSM_model_M{_m}",
+        cls_dict={
+            "signal_mass": _m,
+            "signal_kind": None,
+        },
+    )
 
-    globals()[f"MSSM_model_D_sig_vs_Disc_ggphi_M{_m}"] = MSSM_model.derive(
-        f"MSSM_model_D_sig_vs_Disc_ggphi_M{_m}",
+    globals()[f"MSSM_model_ggphi_M{_m}"] = MSSM_model.derive(
+        f"MSSM_model_ggphi_M{_m}",
         cls_dict={
             "signal_mass": _m,
             "signal_kind": "ggphi",
-            "bdt_discriminant": "sig_vs_disc_ggphi",
         },
     )
 
-    # -------------------------------------------------------------------------
-    # 2. bbphi extraction
-    #
-    # category:
-    #   cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
-    #
-    # variable:
-    #   bdt_D_sig_vs_Disc_bbphi_M{mass}
-    #
-    # signal:
-    #   bbphi_phitt_{mass}
-    # -------------------------------------------------------------------------
-
-    globals()[f"MSSM_model_D_sig_vs_Disc_bbphi_M{_m}"] = MSSM_model.derive(
-        f"MSSM_model_D_sig_vs_Disc_bbphi_M{_m}",
+    globals()[f"MSSM_model_bbphi_M{_m}"] = MSSM_model.derive(
+        f"MSSM_model_bbphi_M{_m}",
         cls_dict={
             "signal_mass": _m,
             "signal_kind": "bbphi",
-            "bdt_discriminant": "sig_vs_disc_bbphi",
-        },
-    )
-
-    # -------------------------------------------------------------------------
-    # 3. DY-region datacard
-    #
-    # category:
-    #   cat_{ch}_sr__bdt_dy_M{mass}
-    #
-    # variable:
-    #   bdt_D_DY_M{mass}
-    #
-    # signal:
-    #   both ggphi_phitt_{mass} and bbphi_phitt_{mass}
-    # -------------------------------------------------------------------------
-
-    globals()[f"MSSM_model_D_DY_M{_m}"] = MSSM_model.derive(
-        f"MSSM_model_D_DY_M{_m}",
-        cls_dict={
-            "signal_mass": _m,
-            "signal_kind": None,
-            "bdt_discriminant": "dy",
-        },
-    )
-
-    # -------------------------------------------------------------------------
-    # 4. TT-region datacard
-    #
-    # category:
-    #   cat_{ch}_sr__bdt_tt_M{mass}
-    #
-    # variable:
-    #   bdt_D_TT_M{mass}
-    #
-    # signal:
-    #   both ggphi_phitt_{mass} and bbphi_phitt_{mass}
-    # -------------------------------------------------------------------------
-
-    globals()[f"MSSM_model_D_TT_M{_m}"] = MSSM_model.derive(
-        f"MSSM_model_D_TT_M{_m}",
-        cls_dict={
-            "signal_mass": _m,
-            "signal_kind": None,
-            "bdt_discriminant": "tt",
         },
     )

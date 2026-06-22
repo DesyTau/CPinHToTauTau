@@ -237,10 +237,11 @@ def main(
     
     
     # combined event selection after all steps
+    
     event_sel = reduce(and_, results.steps.values())
     
     results.event = event_sel
-    
+
     events = self[jets_taggable](events, **kwargs) 
     # add the mc weight
     if self.dataset_inst.is_mc:
@@ -287,5 +288,4 @@ def main(
             }
     events, results = self[increment_stats](
         events, results, stats, weight_map=weight_map, group_map=group_map, **kwargs)
-    
     return events, results

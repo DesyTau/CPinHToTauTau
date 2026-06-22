@@ -11,6 +11,91 @@ from columnflow.columnar_util import ColumnCollection
 from columnflow.util import maybe_import
 np = maybe_import("numpy")
 
+import json
+from pathlib import Path
+
+# BDT adaptive-bin edge files produced by the training post-processing.
+# This must match the OUTPUT_BASE used when creating the score tables and
+# running the common low/high-mass adaptive rebinning step.
+BDT_OUTPUT_BASE = Path(
+    "/eos/project/d/desytau/public/jmalvaso/"
+    "bdt_4_classes_phi_no_DY_tail_focus_normWeightTraining_clippedJetCounts"
+)
+BDT_ADAPTIVE_TAG = "combined_crossApplied"
+BDT_DEFAULT_SCORE_BINNING = (30, 0.0, 1.0)
+
+
+def _bdt_mass_region_name(mass: int) -> str:
+    mass = int(mass)
+    if mass <= 250:
+        return "lowMass_Mle250"
+    return "highMass_Mgt250"
+
+
+def _bdt_common_edges_path(mass: int, discriminant: str) -> Path:
+    region_name = _bdt_mass_region_name(mass)
+    return (
+        BDT_OUTPUT_BASE
+        / "adaptive_discriminant_rebinning"
+        / f"common_{region_name}"
+        / discriminant
+        / f"{discriminant}_common_region_edges_{region_name}_{BDT_ADAPTIVE_TAG}.json"
+    )
+
+
+def _bdt_per_mass_edges_path(mass: int, discriminant: str) -> Path:
+    mass = int(mass)
+    return (
+        BDT_OUTPUT_BASE
+        / f"M{mass}"
+        / "adaptive_discriminant_rebinning"
+        / f"M{mass}"
+        / discriminant
+        / f"{discriminant}_adaptive_edges_M{mass}_{BDT_ADAPTIVE_TAG}.json"
+    )
+
+
+def _extract_edges_from_bdt_json(data):
+    """
+    The common-region JSON stores edges at top level:
+        {"edges": [...], ...}
+
+    The per-mass JSON stores them inside:
+        {"binning_summary": {"edges": [...]}, ...}
+    """
+    if isinstance(data, dict):
+        if "edges" in data:
+            return data["edges"]
+        if "binning_summary" in data and "edges" in data["binning_summary"]:
+            return data["binning_summary"]["edges"]
+    raise KeyError("Could not find adaptive bin edges in JSON payload")
+
+
+def _read_bdt_adaptive_binning(mass: int, discriminant: str):
+    """
+    Return adaptive bin edges for the BDT discriminant variable definition.
+
+    Priority:
+      1. common low/high-mass edges from the post-processing step
+      2. per-mass adaptive edges, if available
+      3. fixed fallback binning, so the config remains importable
+    """
+    for path in (
+        _bdt_common_edges_path(mass, discriminant),
+        _bdt_per_mass_edges_path(mass, discriminant),
+    ):
+        if not path.is_file():
+            continue
+        try:
+            data = json.loads(path.read_text())
+            edges = [float(x) for x in _extract_edges_from_bdt_json(data)]
+            if len(edges) >= 2:
+                return edges
+        except Exception:
+            pass
+
+    return BDT_DEFAULT_SCORE_BINNING
+
 def keep_columns(cfg: od.Config) -> None:
     # columns to keep after certain steps
     cfg.x.keep_columns = DotDict.wrap({
@@ -21,7 +106,9 @@ def keep_columns(cfg: od.Config) -> None:
             "GenZ.*",
             # general event info
             "run", "luminosityBlock", "event",
-            "PV.npvs","Pileup.nTrueInt","Pileup.nPU","genWeight", "LHEWeight.originalXWGTUP", "HTXS_njets*", "LHE_Njets","weight","zpt_weight","muon_weight_nom","mc_weight","tau_weight_nom",
+            "PV.npvs","Pileup.nTrueInt","Pileup.nPU","genWeight",
+            "LHEWeight.originalXWGTUP", "HTXS_njets*", "LHE_Njets","LHEScaleWeight*", "PSWeight*",
+            "weight","zpt_weight","muon_weight_nom","mc_weight","tau_weight_nom",
         } | {
             f"PuppiMET.{var}" for var in [
                 "pt", "phi", "significance",
@@ -52,12 +139,13 @@ def keep_columns(cfg: od.Config) -> None:
         } | {
             f"Muon.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge",
-                "decayMode", "pfRelIso04_all","mT", "rawIdx","IPx", "IPy", "IPz","ip_sig"
+                "decayMode", "pfRelIso04_all","mT", "rawIdx","IPx", "IPy", "IPz","ip_sig", "jetIdx",
             ] 
         } | {
             f"Electron.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge", 
-                "decayMode", "pfRelIso03_all", "mT", "rawIdx", "IPx", "IPy", "IPz","ip_sig", "pt_no_scaling_smearing",
+                "decayMode", "pfRelIso03_all", "mT", "rawIdx", "IPx", "IPy", "IPz","ip_sig", "jetIdx",
+                "pt_no_scaling_smearing",
             ] 
         } | {
             f"{var}_triggerd" for var in [ #Trigger variables to have a track of a particular trigger fired
@@ -83,23 +171,45 @@ def keep_columns(cfg: od.Config) -> None:
                 "pt","eta","phi","mass", "charge", 
                 "decayMode", "rawIdx", "ip_sig", "IPx", "IPy","IPz"
             ]
-        } | {
-            "GenTau.*", "GenTauProd.*", "nJet","N_b_jets", "n_jets", 
-            "lead_jet.*","sublead_jet.*","dijet.*", "n_jets_tag",
-            "lead_b_jet.*","sublead_b_jet.*","di_b_jet.*",
-            "all_triggers_id", "triggerID_e", "triggerID_mu", "triggerID_tau", "D_zeta", "D_zeta_check", "LHE.Njets", "LHE.NpNLO"
+        } |{
+            "GenTau.*", "GenTauProd.*",
+
+            # jet multiplicities and BDT jet inputs
+            "nJet",
+            "n_jets",
+            "N_b_jets",
+            "n_jets_clipped",
+            "n_bjets_clipped",
+            "mt_jets",
+            "mt_bjets",
+
+            # jet and b-jet objects
+            "lead_jet.*",
+            "sublead_jet.*",
+            "dijet.*",
+            "n_jets_tag",
+            "lead_b_jet.*",
+            "sublead_b_jet.*",
+            "di_b_jet.*",
+
+            "all_triggers_id",
+            "triggerID_e",
+            "triggerID_mu",
+            "triggerID_tau",
+            "LHE.Njets",
+            "LHE.NpNLO",
         } | {
             f"hcandprod.{var}" for var in [
                 "pt", "eta", "phi", "mass", "charge",
                 "pdgId", "tauIdx"
             ]
         } | {
-		"hcand_*","tau_decay_prods*", "OC_lepton_veto", "Unclustered_weight", "Unclustered_weight_up", "Unclustered_weight_down"
+		"hcand_*","tau_decay_prods*", "OC_lepton_veto",
 	} | {"is_b_vetoed","channel_id"} | {ColumnCollection.ALL_FROM_SELECTOR},
         "cf.MergeSelectionMasks": {
             "normalization_weight", 
             "cutflow.*", "process_id", "category_ids",
-        },
+    } | { "bdt_*",},
         "cf.UniteColumns": {
             "*",
         },
@@ -222,10 +332,43 @@ def add_jet_features(cfg: od.Config) -> None:
         x_title="N_b_jets",
     )
     cfg.add_variable(
+            name="n_jets_clipped",
+            expression="n_jets_clipped",
+            binning=(4, -0.5, 3.5),
+            discrete_x=True,
+            x_title=r"clipped $N_{\mathrm{jets}}$",
+    )
+
+    cfg.add_variable(
+            name="n_bjets_clipped",
+            expression="n_bjets_clipped",
+            binning=(3, -0.5, 2.5),
+            discrete_x=True,
+            x_title=r"clipped $N_{\mathrm{b\,jets}}$",
+    )
+
+    cfg.add_variable(
+            name="mt_jets",
+            expression="mt_jets",
+            null_value=EMPTY_FLOAT,
+            binning=(25, 0.0, 500.0),
+            unit="GeV",
+            x_title=r"$m_{T}(j_{1}, j_{2})$",
+    )
+
+    cfg.add_variable(
+            name="mt_bjets",
+            expression="mt_bjets",
+            null_value=EMPTY_FLOAT,
+            binning=(25, 0.0, 500.0),
+            unit="GeV",
+            x_title=r"$m_{T}(b_{1}, b_{2})$",
+    )
+    cfg.add_variable(
         name="leading_jet_pt",
         expression="lead_jet.pt",
         null_value=EMPTY_FLOAT,
-        binning=(30, 30.0, 330.0),
+        binning=(15, 30.0, 330.0),
         unit="GeV",
         x_title=r"Leading jet $p_{T}$",
     )        
@@ -233,7 +376,7 @@ def add_jet_features(cfg: od.Config) -> None:
         name="subleading_jet_pt",
         expression="sublead_jet.pt",
         null_value=EMPTY_FLOAT,
-        binning=(25, 30.0, 280.0),
+        binning=(10, 30.0, 280.0),
         unit="GeV",
         x_title=r"Subleading jet $p_{T}$",
     )
@@ -241,63 +384,63 @@ def add_jet_features(cfg: od.Config) -> None:
         name="leading_jet_eta",
         expression="lead_jet.eta",
         null_value=EMPTY_FLOAT,
-        binning=(47, -4.7, 4.7),
+        binning=(24, -4.7, 4.7),
         x_title="Leading Jet $\\eta$",
     ) 
     cfg.add_variable(
         name="subleading_jet_eta",
         expression="sublead_jet.eta",
         null_value=EMPTY_FLOAT,
-        binning=(47, -4.7, 4.7),
+        binning=(24, -4.7, 4.7),
         x_title="Subleading Jet $\\eta$",
     ) 
     cfg.add_variable(
         name="leading_jet_phi",
         expression="lead_jet.phi",
         null_value=EMPTY_FLOAT,
-        binning=(32, -3.2, 3.2),
+        binning=(16, -3.2, 3.2),
         x_title="Leading Jet $\\phi$",
     )  
     cfg.add_variable(
         name="subleading_jet_phi",
         expression="sublead_jet.phi",
         null_value=EMPTY_FLOAT,
-        binning=(32, -3.2, 3.2),
+        binning=(16, -3.2, 3.2),
         x_title="Subleading Jet $\\phi$",
     ) 
     cfg.add_variable(
         name="dijet_delta_eta",
         expression="dijet.deltaeta",
         null_value=EMPTY_FLOAT,
-        binning=(20,-6,6),
+        binning=(12,-6,6),
         x_title="$\\Delta \\eta_{jj}$",
     ) 
     cfg.add_variable(
         name="dijet_delta_phi",
         expression="dijet.deltaphi",
         null_value=EMPTY_FLOAT,
-        binning=(20,-6,6),
+        binning=(12,-6,6),
         x_title="$\\Delta \\phi_{jj}$",
     ) 
     cfg.add_variable(
         name="dijet_pt",
         expression="dijet.pt",
         null_value=EMPTY_FLOAT,
-        binning=(40, 0.0, 400.0),
+        binning=(20, 0.0, 400.0),
         x_title="$pT_{jj}$",
     ) 
     cfg.add_variable(
         name="dijet_delta_r",
         expression="dijet.delta_r",
         null_value=EMPTY_FLOAT,
-        binning=(20,0,5),
+        binning=(15,0,5),
         x_title="$\\Delta R_{jj}$",
     ) 
     cfg.add_variable(
         name="mjj",
         expression="dijet.mass",
         null_value=EMPTY_FLOAT,
-        binning=(40, 10.0, 410.0),
+        binning=(20, 10.0, 410.0),
         unit="GeV",
         x_title=r"$m_{jj}$",
     )
@@ -305,7 +448,7 @@ def add_jet_features(cfg: od.Config) -> None:
         name="leading_b_jet_pt",
         expression="lead_b_jet.pt",
         null_value=EMPTY_FLOAT,
-        binning=(30, 30.0, 330.0),
+        binning=(15, 30.0, 330.0),
         unit="GeV",
         x_title=r"Leading b jet $p_{T}$",
     )        
@@ -313,7 +456,7 @@ def add_jet_features(cfg: od.Config) -> None:
         name="subleading_b_jet_pt",
         expression="sublead_b_jet.pt",
         null_value=EMPTY_FLOAT,
-        binning=(25, 30.0, 280.0),
+        binning=(10, 30.0, 280.0),
         unit="GeV",
         x_title=r"Subleading b jet $p_{T}$",
     )
@@ -321,70 +464,70 @@ def add_jet_features(cfg: od.Config) -> None:
         name="leading_b_jet_eta",
         expression="lead_b_jet.eta",
         null_value=EMPTY_FLOAT,
-        binning=(25, -2.5, 2.5),
+        binning=(12, -2.5, 2.5),
         x_title="Leading b Jet $\\eta$",
     ) 
     cfg.add_variable(
         name="subleading_b_jet_eta",
         expression="sublead_b_jet.eta",
         null_value=EMPTY_FLOAT,
-        binning=(25, -2.5, 2.5),
+        binning=(12, -2.5, 2.5),
         x_title="Subleading b Jet $\\eta$",
     ) 
     cfg.add_variable(
         name="leading_b_jet_phi",
         expression="lead_b_jet.phi",
         null_value=EMPTY_FLOAT,
-        binning=(32, -3.2, 3.2),
+        binning=(16, -3.2, 3.2),
         x_title="Leading b Jet $\\phi$",
     )  
     cfg.add_variable(
         name="subleading_b_jet_phi",
         expression="sublead_b_jet.phi",
         null_value=EMPTY_FLOAT,
-        binning=(32, -3.2, 3.2),
+        binning=(16, -3.2, 3.2),
         x_title="Subleading b Jet $\\phi$",
     ) 
     cfg.add_variable(
         name="di_b_jet_delta_eta",
         expression="di_b_jet.deltaeta",
         null_value=EMPTY_FLOAT,
-        binning=(20,-6,6),
+        binning=(12,-6,6),
         x_title="$\\Delta \\eta_{bb}$",
     ) 
     cfg.add_variable(
         name="di_b_jet_delta_phi",
         expression="di_b_jet.deltaphi",
         null_value=EMPTY_FLOAT,
-        binning=(20,-6,6),
+        binning=(12,-6,6),
         x_title="$\\Delta \\phi_{bb}$",
     ) 
     cfg.add_variable(
         name="di_b_jet_pt",
         expression="di_b_jet.pt",
         null_value=EMPTY_FLOAT,
-        binning=(40, 0.0, 400.0),
+        binning=(20, 0.0, 400.0),
         x_title="$pT_{bb}$",
     ) 
     cfg.add_variable(
         name="di_b_jet_delta_r",
         expression="di_b_jet.delta_r",
         null_value=EMPTY_FLOAT,
-        binning=(20,0,5),
+        binning=(15,0,5),
         x_title="$\\Delta R_{bb}$",
     ) 
     cfg.add_variable(
         name="mb_jb_j",
         expression="di_b_jet.mass",
         null_value=EMPTY_FLOAT,
-        binning=(40, 10.0, 410.0),
+        binning=(20, 10.0, 410.0),
         unit="GeV",
         x_title=r"$m_{bb}$",
     )            
     cfg.add_variable(
         name="ht",
         expression="ht",
-        binning=(40, 0.0, 800.0),
+        binning=(20, 0.0, 800.0),
         unit="GeV",
         x_title="HT",
     )
@@ -392,14 +535,14 @@ def add_jet_features(cfg: od.Config) -> None:
         name="jet_raw_DeepJetFlavB",
         expression="Jet.btagDeepFlavB",
         null_value=EMPTY_FLOAT,
-        binning=(30, 0,1),
+        binning=(15, 0,1),
         x_title=r"raw DeepJetFlawB",
     )
     cfg.add_variable(
         name="jet_raw_PNetB",
         expression="Jet.btagPNetB",
         null_value=EMPTY_FLOAT,
-        binning=(30, 0,1),
+        binning=(15, 0,1),
         x_title=r"raw PNetB",
     )
     
@@ -411,7 +554,7 @@ def add_highlevel_features(cfg: od.Config) -> None:
         name="met",
         expression="MET.pt",
         null_value=EMPTY_FLOAT,
-        binning=(40, 0.0, 200.0),
+        binning=(20, 0.0, 200.0),
         x_title=r"MET",
     )
 
@@ -419,36 +562,38 @@ def add_highlevel_features(cfg: od.Config) -> None:
         name="puppi_met_pt",
         expression="PuppiMET.pt",
         null_value=EMPTY_FLOAT,
-        binning=(60, 0,300),
+        binning=(30, 0,300),
         unit="GeV",
         x_title=r"PUPPI MET $p_T$",
+    )
+    cfg.add_variable(
+        name="puppi_met_pt_recoil_corr",
+        expression="RecoilCorrMET.pt",
+        null_value=EMPTY_FLOAT,
+        binning=(30, 0,300),
+        unit="GeV",
+        x_title=r"RecoilCorrMET $p_T$",
     )
     cfg.add_variable(
         name="puppi_met_phi",
         expression="PuppiMET.phi",
         null_value=EMPTY_FLOAT,
-        binning=(32, -3.2,3.2),
+        binning=(16, -3.2,3.2),
         x_title=r"PUPPI MET $\phi$",
     )  
     cfg.add_variable(
         name="D_zeta",
         expression="D_zeta",
         null_value=EMPTY_FLOAT,
-        binning=(23, -80,150),
+        binning=(12, -80, 300),
         x_title="$D_{\\zeta}$"
-    )  
-    cfg.add_variable(
-        name="D_zeta_check",
-        expression="D_zeta_check",
-        null_value=EMPTY_FLOAT,
-        binning=(15, 0, 150),
-        x_title="$D_{\\zeta}$"
-    )  
+    )
+    
     cfg.add_variable(
         name="pt_H",
         expression="pt_H",
         null_value=EMPTY_FLOAT,
-        binning=(25,0,250),
+        binning=(12,0,250),
         x_title="$p_{T}(H)$"
     )  
     
@@ -595,7 +740,7 @@ def add_dilepton_features(cfg: od.Config) -> None:
                 name=f"{ch_str}_mvis",
                 expression=f"hcand_{ch_str}.mass",
                 null_value=EMPTY_FLOAT,
-                binning=(50, 0.0, 250.0),
+                binning=(25, 0.0, 250.0),
                 unit="GeV",
                 x_title=r"$m_{vis}$",
             )
@@ -613,7 +758,7 @@ def add_dilepton_features(cfg: od.Config) -> None:
                 name=f"{ch_str}_mt_e",
                 expression=f"hcand_{ch_str}.mt_e",
                 null_value=EMPTY_FLOAT,
-                binning=(50, 0.0, 250.0),
+                binning=(25, 0.0, 250.0),
                 unit="GeV",
                 x_title="$m_{T}^{e}$",
             )
@@ -621,7 +766,7 @@ def add_dilepton_features(cfg: od.Config) -> None:
                 name=f"{ch_str}_mt_mu",
                 expression=f"hcand_{ch_str}.mt_mu",
                 null_value=EMPTY_FLOAT,
-                binning=(50, 0.0, 250.0),
+                binning=(25, 0.0, 250.0),
                 unit="GeV",
                 x_title="$m_{T}^{\\mu}$",
             )
@@ -629,7 +774,7 @@ def add_dilepton_features(cfg: od.Config) -> None:
                 name=f"{ch_str}_mt_emu",
                 expression=f"hcand_{ch_str}.mt_emu",
                 null_value=EMPTY_FLOAT,
-                binning=(50, 0.0, 250.0),
+                binning=(25, 0.0, 250.0),
                 unit="GeV",
                 x_title="$m_{T}^{e\\mu}$",
             )
@@ -637,30 +782,22 @@ def add_dilepton_features(cfg: od.Config) -> None:
                 name=f"{ch_str}_mt_tot",
                 expression=f"hcand_{ch_str}.mt_tot",
                 null_value=EMPTY_FLOAT,
-                binning=(40, 0.0, 400.0),
+                binning=(20, 0.0, 400.0),
                 unit="GeV",
                 x_title="$m_{T}^{TOT}$",
-            )
-            cfg.add_variable(
-                name=f"{ch_str}_mt_tot_fit",
-                expression=f"hcand_{ch_str}.mt_tot",
-                null_value=EMPTY_FLOAT,
-                binning=(40, 0.0, 3000.0),
-                unit="GeV",
-                x_title="$m_{T}^{TOT} fit$",
             )
         cfg.add_variable(
             name=f"{ch_str}_delta_r",
             expression=f"hcand_{ch_str}.delta_r",
             null_value=EMPTY_FLOAT,
-            binning=(50, 0.2, 5.2),
+            binning=(25, 0.2, 5.2),
             x_title=r"$\Delta R(\ell,\ell)$",
         )
         cfg.add_variable(
                 name=f"{ch_str}_pt",
                 expression=f"hcand_{ch_str}.pt",
                 null_value=EMPTY_FLOAT,
-                binning=(40, 0.0, 200.0),
+                binning=(20, 0.0, 200.0),
                 unit="GeV/c",
                 x_title=r"$p_{T}(\ell\ell)$",
         )
@@ -672,7 +809,7 @@ def add_dilepton_features(cfg: od.Config) -> None:
                 name=f"{ch_str}_{lep}_pt",
                 expression=f"hcand_{ch_str}.{lep}.pt",
                 null_value=EMPTY_FLOAT,
-                binning=(40, 15, 215),
+                binning=(20, 15, 215),
                 unit="GeV",
                 x_title= rf"{lep_str} $p_{{T}}$",
             )
@@ -680,21 +817,21 @@ def add_dilepton_features(cfg: od.Config) -> None:
                 name=f"{ch_str}_{lep}_eta",
                 expression=f"hcand_{ch_str}.{lep}.eta",
                 null_value=EMPTY_FLOAT,
-                binning=(30, -2.5, 2.5),
+                binning=(15, -2.5, 2.5),
                 x_title=rf"{lep_str} $\eta$",
             )
             cfg.add_variable(
                 name=f"{ch_str}_{lep}_phi",
                 expression=f"hcand_{ch_str}.{lep}.phi",
                 null_value=EMPTY_FLOAT,
-                binning=(32, -3.3, 3.3),
+                binning=(16, -3.3, 3.3),
                 x_title=rf"{lep_str} $\phi$",
             )
             cfg.add_variable(
                 name=f"{ch_str}_{lep}_mass",
                 expression=f"hcand_{ch_str}.{lep}.mass",
                 null_value=EMPTY_FLOAT,
-                binning=(30, 0, 3),
+                binning=(15, 0, 3),
                 unit="GeV",
                 x_title=f"{lep_str} mass",
             )
@@ -816,43 +953,316 @@ def add_dilepton_features(cfg: od.Config) -> None:
             name=f"hcand_{ch_str}_fastMTT_mass",
             expression=f"hcand_{ch_str}.fastMTT.mass",
             null_value=EMPTY_FLOAT,
-            binning=(50, 0.0, 500.0),
+            binning=(25, 0.0, 500.0),
             unit="GeV",
             x_title=r"$mass^{fastMTT}$",
         )
         
+# =============================================================================
+# MSSM BDT output variables
+# =============================================================================
+
+# Derived 1D BDT variables produced by MSSM_H_tt/production/bdt_2d_variables.py
+#
+#   bdt_Disc_ggphi_M{mass}
+#   bdt_Disc_bbphi_M{mass}
+#
+# Binning convention:
+#   Disc_ggphi uses the same adaptive binning as D_ggphi
+#   Disc_bbphi uses the same adaptive binning as D_bbphi
+#
+BDT_DERIVED_1D_DISCRIMINANTS = {
+    "Disc_ggphi": {
+        "source": "D_ggphi",
+        "title": (
+            r"$D_{\mathrm{gg}\phi}/"
+            r"(D_{\mathrm{gg}\phi}+D_{\mathrm{bb}\phi})$"
+        ),
+    },
+    "Disc_bbphi": {
+        "source": "D_bbphi",
+        "title": (
+            r"$D_{\mathrm{bb}\phi}/"
+            r"(D_{\mathrm{gg}\phi}+D_{\mathrm{bb}\phi})$"
+        ),
+    },
+}
+
+
+# Flattened 2D variables produced by MSSM_H_tt/production/bdt_2d_variables.py.
+#
+# The producer stores a flattened bin coordinate:
+#
+#   flat_index = ix * n_y_bins + iy
+#
+# Therefore the plotting variable must use:
+#
+#   binning = (n_x_bins * n_y_bins, 0, n_x_bins * n_y_bins)
+#
+BDT_2D_FLATTENED_PAIRS = (
+    ("D_sig_vs_D_ggphi", "D_sig", "D_ggphi"),
+    ("D_sig_vs_D_bbphi", "D_sig", "D_bbphi"),
+    ("D_ggphi_vs_D_bbphi", "D_ggphi", "D_bbphi"),
+
+    # New derived-disc flattened 2D variables
+    ("D_sig_vs_Disc_ggphi", "D_sig", "Disc_ggphi"),
+    ("D_sig_vs_Disc_bbphi", "D_sig", "Disc_bbphi"),
+)
+
+
+def _bdt_discriminant_binning_source(discriminant: str) -> str:
+    """
+    Return the discriminant whose adaptive binning should be used.
+
+    For standard variables:
+      D_sig -> D_sig
+      D_ggphi -> D_ggphi
+      D_bbphi -> D_bbphi
+
+    For derived variables:
+      Disc_ggphi -> D_ggphi
+      Disc_bbphi -> D_bbphi
+    """
+    if discriminant in BDT_DERIVED_1D_DISCRIMINANTS:
+        return BDT_DERIVED_1D_DISCRIMINANTS[discriminant]["source"]
+
+    return discriminant
+
+
+def _bdt_n_bins_from_binning(binning) -> int:
+    """
+    Return the number of bins from either:
+      - regular binning: (n_bins, x_min, x_max)
+      - variable binning: [edge0, edge1, ...]
+    """
+    b = list(binning)
+
+    if (
+        len(b) == 3
+        and isinstance(b[0], (int, np.integer))
+        and b[0] > 0
+        and float(b[1]) < float(b[2])
+    ):
+        return int(b[0])
+
+    return len(b) - 1
+
+
+def _bdt_flattened_2d_binning(
+    mass: int,
+    x_discriminant: str,
+    y_discriminant: str,
+):
+    """
+    Return the flattened 2D binning for a pair of discriminants.
+
+    The producer stores values in:
+      [0, n_x_bins * n_y_bins)
+
+    with bin centers:
+      flat_index + 0.5
+    """
+    x_source = _bdt_discriminant_binning_source(x_discriminant)
+    y_source = _bdt_discriminant_binning_source(y_discriminant)
+
+    x_binning = _read_bdt_adaptive_binning(mass, x_source)
+    y_binning = _read_bdt_adaptive_binning(mass, y_source)
+
+    n_x_bins = _bdt_n_bins_from_binning(x_binning)
+    n_y_bins = _bdt_n_bins_from_binning(y_binning)
+
+    n_flat_bins = n_x_bins * n_y_bins
+
+    return (n_flat_bins, 0, n_flat_bins)
+
+
+def _bdt_discriminant_title(discriminant: str, discriminants: dict) -> str:
+    """
+    Return a readable title for both standard and derived discriminants.
+    """
+    if discriminant in BDT_DERIVED_1D_DISCRIMINANTS:
+        return BDT_DERIVED_1D_DISCRIMINANTS[discriminant]["title"]
+
+    return discriminants[discriminant]
+
+
 def add_mssm_bdt_output(cfg: od.Config) -> None:
-  # per-mass variables
-  from MSSM_H_tt.config.mass_points import read_bdt_masses
-  MASS_POINTS = read_bdt_masses()
+    """
+    Register the per-mass outputs of the current MSSM e-mu 4-class BDT producer.
 
-  # must match the suffixes used in the producer (bdt_score.py)
-  class_labels = ["ggh", "bbh", "dy", "tt"]
-  class_titles = {
-    "ggh": "ggH→ττ",
-    "bbh": "bbH→ττ",
-    "dy":  "DY",
-    "tt":  "tt̄",
-  }
+    Four-region convention:
+      bdt_cat_M{mass} = argmax(P_ggphi, P_bbphi, P_DY, P_TT)
 
-  for m in MASS_POINTS:
-    # one variable per raw-score branch
-    for the_var in class_labels:
-      cfg.add_variable(
-        name=f"bdt_raw_score_{the_var}_M{m}",
-        expression=f"bdt_raw_score_{the_var}_M{m}",
-        binning=(30, 0, 1.0),
-        x_title=f"raw BDT score for {class_titles[the_var]} (M={m} GeV)",
-      )
+    Class convention:
+      0 -> ggphi
+      1 -> bbphi
+      2 -> DY
+      3 -> TT
 
-    # winning class index: 0..6
+    Region-specific fit variables:
+      ggphi region -> bdt_D_ggphi_M{mass}
+      bbphi region -> bdt_D_bbphi_M{mass}
+      DY     region -> bdt_D_DY_M{mass}
+      TT     region -> bdt_D_TT_M{mass}
+
+    Additional derived 1D variables:
+      bdt_Disc_ggphi_M{mass}
+      bdt_Disc_bbphi_M{mass}
+
+    Flattened 2D variables:
+      bdt_D_sig_vs_D_ggphi_M{mass}
+      bdt_D_sig_vs_D_bbphi_M{mass}
+      bdt_D_ggphi_vs_D_bbphi_M{mass}
+      bdt_D_sig_vs_Disc_ggphi_M{mass}
+      bdt_D_sig_vs_Disc_bbphi_M{mass}
+    """
+    from MSSM_H_tt.config.mass_points import read_bdt_masses
+    MASS_POINTS = read_bdt_masses()
+
+    class_labels = ["ggphi", "bbphi", "dy", "tt"]
+
+    class_titles = {
+        "ggphi": r"gg$\phi$($\phi\rightarrow\tau\tau$)",
+        "bbphi": r"bb$\phi$($\phi\rightarrow\tau\tau$)",
+        "dy": "DY",
+        "tt": r"t$\bar{t}$",
+    }
+
+    discriminants = {
+        "D_sig": r"$D_{\mathrm{sig}}$",
+        "D_ggphi": r"$D_{\mathrm{gg}\phi}$",
+        "D_bbphi": r"$D_{\mathrm{bb}\phi}$",
+        "D_DY": r"$D_{\mathrm{DY}}$",
+        "D_TT": r"$D_{\mathrm{TT}}$",
+    }
+
+    # Optional plotting aliases with lower-case background names.
+    # Keep them only if downstream plotting/config code still expects D_dy/D_tt.
+    discriminant_aliases = {
+        "D_dy": "D_DY",
+        "D_tt": "D_TT",
+    }
+
+    for m in MASS_POINTS:
+        # ---------------------------------------------------------------------
+        # Raw four-class probabilities from the BDT producer
+        # ---------------------------------------------------------------------
+        for label in class_labels:
+            cfg.add_variable(
+                name=f"bdt_raw_score_{label}_M{m}",
+                expression=f"bdt_raw_score_{label}_M{m}",
+                null_value=EMPTY_FLOAT,
+                binning=(30, 0.0, 1.0),
+                x_title=f"BDT probability for {class_titles[label]} (M={m} GeV)",
+            )
+
+        # ---------------------------------------------------------------------
+        # Standard 1D BDT discriminants
+        # ---------------------------------------------------------------------
+        for discr_name, discr_title in discriminants.items():
+            cfg.add_variable(
+                name=f"bdt_{discr_name}_M{m}",
+                expression=f"bdt_{discr_name}_M{m}",
+                null_value=EMPTY_FLOAT,
+                binning=_read_bdt_adaptive_binning(m, discr_name),
+                x_title=f"{discr_title} (M={m} GeV)",
+            )
+
+        # ---------------------------------------------------------------------
+        # New derived 1D BDT discriminants
+        #
+        # Produced columns:
+        #   bdt_Disc_ggphi_M{m}
+        #   bdt_Disc_bbphi_M{m}
+        # ---------------------------------------------------------------------
+        for discr_name, discr_info in BDT_DERIVED_1D_DISCRIMINANTS.items():
+            source_discr = discr_info["source"]
+            discr_title = discr_info["title"]
+
+            cfg.add_variable(
+                name=f"bdt_{discr_name}_M{m}",
+                expression=f"bdt_{discr_name}_M{m}",
+                null_value=EMPTY_FLOAT,
+                binning=_read_bdt_adaptive_binning(m, source_discr),
+                x_title=f"{discr_title} (M={m} GeV)",
+            )
+
+        # ---------------------------------------------------------------------
+        # Backward-compatible aliases for older plot configs that used
+        # bdt_D_dy_M{m} and bdt_D_tt_M{m}.
+        # ---------------------------------------------------------------------
+        for alias, target in discriminant_aliases.items():
+            cfg.add_variable(
+                name=f"bdt_{alias}_M{m}",
+                expression=f"bdt_{target}_M{m}",
+                null_value=EMPTY_FLOAT,
+                binning=_read_bdt_adaptive_binning(m, target),
+                x_title=f"{discriminants[target]} (M={m} GeV)",
+            )
+
+        # ---------------------------------------------------------------------
+        # Flattened 2D BDT variables
+        #
+        # Producer output convention:
+        #   flat_index = ix * n_y_bins + iy
+        #   stored value = flat_index + 0.5
+        #
+        # Config binning:
+        #   (n_x_bins * n_y_bins, 0, n_x_bins * n_y_bins)
+        # ---------------------------------------------------------------------
+        for pair_name, x_discr, y_discr in BDT_2D_FLATTENED_PAIRS:
+            x_title = _bdt_discriminant_title(x_discr, discriminants)
+            y_title = _bdt_discriminant_title(y_discr, discriminants)
+
+            cfg.add_variable(
+                name=f"bdt_{pair_name}_M{m}",
+                expression=f"bdt_{pair_name}_M{m}",
+                null_value=EMPTY_FLOAT,
+                binning=_bdt_flattened_2d_binning(m, x_discr, y_discr),
+                x_title=(
+                    f"Flattened 2D bin: {x_title} vs {y_title} "
+                    f"(M={m} GeV)"
+                ),
+            )
+
+        # ---------------------------------------------------------------------
+        # Four BDT regions
+        # ---------------------------------------------------------------------
+        cfg.add_variable(
+            name=f"bdt_cat_M{m}",
+            expression=f"bdt_cat_M{m}",
+            binning=(4, -0.5, 3.5),
+            discrete_x=True,
+            x_title=(
+                r"BDT category: "
+                r"0=gg$\phi$, 1=bb$\phi$, 2=DY, 3=t$\bar{t}$ "
+                f"(M={m} GeV)"
+            ),
+        )
+
+def add_emu_phi_cp_features(cfg: od.Config) -> None:
     cfg.add_variable(
-      name=f"bdt_cat_M{m}",
-      expression=f"bdt_cat_M{m}",
-      binning=(7, -0.5, 6.5),
-      discrete_x=True,
-      x_title=f"BDT class (M={m})",
+        name="phi_cp_emu",
+        expression="phi_cp_emu",
+        null_value=EMPTY_FLOAT,
+        binning=(16, 0.0, 2 * np.pi),
+        x_title=r"$\varphi_{CP}^{e\mu}$ (rad)",
     )
+    cfg.add_variable(
+        name="cos_phi_cp_emu",
+        expression="cos_phi_cp_emu",
+        null_value=EMPTY_FLOAT,
+        binning=(20, -1.0, 1.0),
+        x_title=r"$\cos(\varphi_{CP}^{e\mu})$",
+    )
+
+    cfg.add_variable(
+        name="sin_phi_cp_emu",
+        expression="sin_phi_cp_emu",
+        null_value=EMPTY_FLOAT,
+        binning=(20, -1.0, 1.0),
+        x_title=r"$\sin(\varphi_{CP}^{e\mu})$",
+    )    
 
 def add_variables(cfg: od.Config) -> None:
     """
@@ -866,3 +1276,4 @@ def add_variables(cfg: od.Config) -> None:
     add_cutflow_features(cfg)
     add_dilepton_features(cfg)
     add_mssm_bdt_output(cfg)
+    add_emu_phi_cp_features(cfg)

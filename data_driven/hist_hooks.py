@@ -103,10 +103,172 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                 raise
             return None
 
-    def _get_or_create_hist_like(hists: dict, proc_obj, donor_hist: hist.Hist, shift_sources):
-        if proc_obj in hists:
-            return hists[proc_obj]
+    def _axis_entries(h: hist.Hist, axis_name: str):
+        try:
+            ax = h.axes[axis_name]
+        except Exception:
+            return set()
 
+        out = []
+        for i in range(ax.size):
+            try:
+                out.append(ax.value(i))
+            except Exception:
+                try:
+                    out.append(list(ax)[i])
+                except Exception:
+                    pass
+        return set(out)
+
+    def _hist_has_axis_entry(h: hist.Hist, axis_name: str, entry: str) -> bool:
+        return entry in _axis_entries(h, axis_name)
+
+    def _last_axis_description(h: hist.Hist) -> str:
+        ax = h.axes[-1]
+        name = getattr(ax, "name", None)
+        size = getattr(ax, "size", None)
+
+        if hasattr(ax, "edges"):
+            edges = np.asarray(ax.edges)
+            return (
+                f"name={name}, size={size}, "
+                f"edges_first={edges[:5]}, edges_last={edges[-5:]}"
+            )
+
+        try:
+            vals = list(ax)
+            return f"name={name}, size={size}, values={vals}"
+        except Exception:
+            return f"name={name}, size={size}"
+
+    def _same_last_axis(h1: hist.Hist, h2: hist.Hist) -> bool:
+        ax1 = h1.axes[-1]
+        ax2 = h2.axes[-1]
+
+        if getattr(ax1, "size", None) != getattr(ax2, "size", None):
+            return False
+
+        if hasattr(ax1, "edges") and hasattr(ax2, "edges"):
+            return np.allclose(np.asarray(ax1.edges), np.asarray(ax2.edges))
+
+        try:
+            return list(ax1) == list(ax2)
+        except Exception:
+            return True
+
+    def _assert_same_hist_shape(label, h1, h2, config, category, region, shift):
+        v1 = h1.values()
+        v2 = h2.values()
+
+        if (v1.shape != v2.shape) or (not _same_last_axis(h1, h2)):
+            raise ValueError(
+                "\n"
+                f"[{label}] incompatible histogram binning\n"
+                f"  config     : {config.name}\n"
+                f"  category   : {category}\n"
+                f"  region     : {region}\n"
+                f"  shift      : {shift}\n"
+                f"  h1 shape   : {v1.shape}\n"
+                f"  h2 shape   : {v2.shape}\n"
+                f"  h1 axis    : {_last_axis_description(h1)}\n"
+                f"  h2 axis    : {_last_axis_description(h2)}\n"
+                "\nThis means the QCD hook is trying to subtract histograms with different "
+                "variable binnings. Most often this is caused by stale histogram outputs "
+                "or by mixing inclusive and BDT categories.\n"
+            )
+
+    def _assign_qcd_slot(h_qcd, tmp_arr, category, shift, values, variances, context):
+        values = np.asarray(values)
+        variances = np.asarray(variances)
+
+        if not _hist_has_axis_entry(h_qcd, "category", category):
+            raise ValueError(
+                f"\n[QCD assignment] category '{category}' is not present in the QCD histogram axis.\n"
+                f"Context: {context}\n"
+            )
+
+        if not _hist_has_axis_entry(h_qcd, "shift", shift):
+            raise ValueError(
+                f"\n[QCD assignment] shift '{shift}' is not present in the QCD histogram axis.\n"
+                f"Context: {context}\n"
+            )
+
+        idx = find_idxs(h_qcd, category, shift)
+        slot = tmp_arr[idx]
+
+        if np.asarray(slot.value).shape != values.shape:
+            raise ValueError(
+                "\n[QCD assignment] target histogram slot has incompatible shape\n"
+                f"  context      : {context}\n"
+                f"  category     : {category}\n"
+                f"  shift        : {shift}\n"
+                f"  target shape : {np.asarray(slot.value).shape}\n"
+                f"  values shape : {values.shape}\n"
+                f"  qcd axis     : {_last_axis_description(h_qcd)}\n"
+            )
+
+        slot.value = values
+        slot.variance = variances
+
+    def _resolve_current_categories(task, category_name=None):
+        """
+        Resolve the current category for branch-wise plotting tasks.
+
+        Important:
+        - task.categories is the full list passed to the task.
+        - For PlotShiftedVariables1D, the current branch category is usually stored
+          in category_name, task.category_inst, or task.branch_data.
+        """
+
+        if category_name:
+            return [category_name]
+
+        category_inst = getattr(task, "category_inst", None)
+        if category_inst is not None:
+            name = getattr(category_inst, "name", None)
+            if name:
+                return [name]
+
+        branch_data = getattr(task, "branch_data", None)
+
+        if isinstance(branch_data, dict):
+            for key in ("category", "category_name", "cat"):
+                val = branch_data.get(key)
+                if val is None:
+                    continue
+                if hasattr(val, "name"):
+                    return [val.name]
+                if isinstance(val, str):
+                    return [val]
+
+        for key in ("category", "category_name", "cat"):
+            try:
+                val = getattr(branch_data, key)
+            except Exception:
+                val = None
+            if val is None:
+                continue
+            if hasattr(val, "name"):
+                return [val.name]
+            if isinstance(val, str):
+                return [val]
+
+        if isinstance(branch_data, (tuple, list)):
+            for val in branch_data:
+                if hasattr(val, "name") and str(val.name).startswith("cat_"):
+                    return [val.name]
+                if isinstance(val, str) and val.startswith("cat_"):
+                    return [val]
+
+        # Fallback only. This reproduces the old behavior but prints a warning.
+        cats = list(getattr(task, "categories", []))
+        logger.warning(
+            "Could not resolve the current branch category. "
+            f"Falling back to all task.categories: {cats}"
+        )
+        return cats
+
+    def _get_or_create_hist_like(hists: dict, proc_obj, donor_hist: hist.Hist, shift_sources):
         def storage_from(donor: hist.Hist):
             for attr in ("_storage_type", "storage_type"):
                 if hasattr(donor, attr):
@@ -121,6 +283,20 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                         return st
             return hist.storage.Weight()
 
+        if proc_obj in hists:
+            existing = hists[proc_obj]
+
+            # Recreate only when the variable axis is incompatible.
+            # This protects against stale qcd histograms produced with old binning.
+            if _same_last_axis(existing, donor_hist):
+                return existing
+
+            logger.warning(
+                f"existing histogram for process '{proc_obj.name}' has incompatible "
+                "variable binning; recreating it from donor histogram"
+            )
+            del hists[proc_obj]
+
         axes = []
         for ax in donor_hist.axes:
             if getattr(ax, "name", None) == "shift":
@@ -134,6 +310,10 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
     def qcd_estimation(task, inputs, variable_name=None, category_name=None, **kwargs):
         """
         QCD estimation hook compatible with both normal histogram tasks and CreateDatacards.
+
+        Important fix:
+        - For plotting tasks, use only the current branch category.
+        - Do not loop over task.categories, because that is the full requested list.
         """
 
         output = {}
@@ -154,8 +334,10 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                     continue
                 seen.add(b)
                 out.extend((f"{b}_down", f"{b}_up"))
+
             if "nominal" not in out:
                 out.append("nominal")
+
             return tuple(out)
 
         def fmt_vals(a):
@@ -175,7 +357,9 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                 output[config] = hists
                 continue
 
-            if task.get_task_family() == "cf.CreateDatacards":
+            is_datacard_task = task.get_task_family() == "cf.CreateDatacards"
+
+            if is_datacard_task:
                 if category_name is None:
                     raise ValueError(
                         "qcd_estimation requires 'category_name' when run from CreateDatacards"
@@ -186,7 +370,7 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                 ax = incl_h.axes["shift"]
                 shift_sources = tuple(ax.value(i) for i in range(ax.size))
             else:
-                sr_cats = task.categories
+                sr_cats = _resolve_current_categories(task, category_name=category_name)
                 shift_sources = up_down_once(task.shift_sources)
 
             full_d = get_data_hist(hists)
@@ -208,21 +392,32 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
 
             def mc_shift(shift: str) -> str:
                 try:
-                    return shift if shift in list(full_mc.axes["shift"]) else "nominal"
+                    return shift if shift in _axis_entries(full_mc, "shift") else "nominal"
                 except Exception:
                     return "nominal"
 
-            h_donor_proc = list(hists.keys())[0]
+            # Use MC as donor for the QCD histogram, since QCD is part of the MC stack.
             h_qcd = _get_or_create_hist_like(
                 hists=hists,
                 proc_obj=qcd_proc,
-                donor_hist=hists[h_donor_proc],
+                donor_hist=full_mc,
                 shift_sources=shift_sources,
             )
             tmp_arr = h_qcd.view()
 
+            data_categories = _axis_entries(full_d, "category")
+            mc_categories = _axis_entries(full_mc, "category")
+
             for the_cat in sr_cats:
                 print(f"producing qcd for {the_cat}, {config.name}")
+
+                if the_cat not in config.categories.names():
+                    logger.warning(
+                        f"category '{the_cat}' is not defined in config '{config.name}'; "
+                        "skipping qcd estimation"
+                    )
+                    continue
+
                 sr = config.get_category(the_cat)
 
                 if "abcd_regs" not in sr.aux:
@@ -234,16 +429,24 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
 
                 d = {}
                 cr_cat = ""
+
                 for reg_name, full_name in sr.aux["abcd_regs"].items():
+                    if reg_name == "dr_num":
+                        cr_cat = full_name
+
+                    if full_name not in data_categories:
+                        logger.warning(
+                            f"[QCD] data category '{full_name}' not available "
+                            f"for config '{config.name}', SR category '{the_cat}'"
+                        )
+                        continue
+
                     loc_dict_data = {
                         "category": hist.loc(full_name),
                         "shift": hist.loc("nominal"),
                     }
-                    if full_name in list(full_d.axes["category"]):
-                        d[reg_name] = full_d[loc_dict_data]
-                    if reg_name == "dr_num":
-                        cr_cat = full_name
-    
+                    d[reg_name] = full_d[loc_dict_data]
+
                 if ("ar" not in d) or d["ar"].empty():
                     print("*** WARNING: AR data histogram doesn't exist or is empty! ***")
                     continue
@@ -252,18 +455,58 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
 
                 mc_nom = {}
                 for reg_name, full_name in sr.aux["abcd_regs"].items():
+                    if full_name not in mc_categories:
+                        logger.warning(
+                            f"[QCD] MC category '{full_name}' not available "
+                            f"for config '{config.name}', SR category '{the_cat}', nominal"
+                        )
+                        continue
+
                     loc_dict_mc_nom = {
                         "category": hist.loc(full_name),
                         "shift": hist.loc(shift_mc_nom),
                     }
-                    if full_name in list(full_mc.axes["category"]):
-                        mc_nom[reg_name] = full_mc[loc_dict_mc_nom]
+                    mc_nom[reg_name] = full_mc[loc_dict_mc_nom]
 
                 if flat_tf:
                     tf_nom = 1.0
                 else:
+                    if ("dr_num" not in d) or ("dr_den" not in d):
+                        logger.warning(
+                            f"[QCD] missing data dr_num/dr_den for '{the_cat}', "
+                            "cannot compute non-flat TF; skipping"
+                        )
+                        continue
+
+                    if ("dr_num" not in mc_nom) or ("dr_den" not in mc_nom):
+                        logger.warning(
+                            f"[QCD] missing MC dr_num/dr_den for '{the_cat}', "
+                            "cannot compute non-flat TF; skipping"
+                        )
+                        continue
+
+                    _assert_same_hist_shape(
+                        "QCD TF numerator",
+                        d["dr_num"],
+                        mc_nom["dr_num"],
+                        config,
+                        the_cat,
+                        "dr_num",
+                        "nominal",
+                    )
+                    _assert_same_hist_shape(
+                        "QCD TF denominator",
+                        d["dr_den"],
+                        mc_nom["dr_den"],
+                        config,
+                        the_cat,
+                        "dr_den",
+                        "nominal",
+                    )
+
                     num_nom = d["dr_num"].values() - mc_nom["dr_num"].values()
                     den_nom = d["dr_den"].values() - mc_nom["dr_den"].values()
+
                     tf_nom = np.divide(
                         num_nom,
                         den_nom,
@@ -272,7 +515,17 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                     )
 
                 d_ar = d["ar"]
+
                 if "ar" in mc_nom:
+                    _assert_same_hist_shape(
+                        "QCD AR nominal subtraction",
+                        d_ar,
+                        mc_nom["ar"],
+                        config,
+                        the_cat,
+                        "ar",
+                        "nominal",
+                    )
                     mc_ar_val_nom = mc_nom["ar"].values()
                     mc_ar_var_nom = mc_nom["ar"].view().variance
                 else:
@@ -282,10 +535,28 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                 val_nom = np.maximum(d_ar.values() - mc_ar_val_nom, 0.0) * tf_nom
                 var_nom = (d_ar.view().variance + mc_ar_var_nom) * (tf_nom ** 2)
 
-                cr_val_nom = None
-                cr_var_nom = None
+                _assign_qcd_slot(
+                    h_qcd,
+                    tmp_arr,
+                    the_cat,
+                    "nominal",
+                    val_nom,
+                    var_nom,
+                    context=f"{config.name}, {the_cat}, nominal",
+                )
+
                 if cr_cat:
                     if ("dr_den" in d) and ("dr_den" in mc_nom):
+                        _assert_same_hist_shape(
+                            "QCD CR nominal subtraction",
+                            d["dr_den"],
+                            mc_nom["dr_den"],
+                            config,
+                            the_cat,
+                            "dr_den",
+                            "nominal",
+                        )
+
                         cr_val_nom = np.maximum(
                             d["dr_den"].values() - mc_nom["dr_den"].values(),
                             0.0,
@@ -297,17 +568,18 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                         cr_val_nom = d["dr_den"].values()
                         cr_var_nom = d["dr_den"].view().variance
                     else:
-                        cr_val_nom = 0.0
-                        cr_var_nom = 0.0
+                        cr_val_nom = np.zeros_like(d_ar.values())
+                        cr_var_nom = np.zeros_like(d_ar.view().variance)
 
-                idx_nom = find_idxs(h_qcd, the_cat, "nominal")
-                tmp_arr[idx_nom].value = val_nom
-                tmp_arr[idx_nom].variance = var_nom
-
-                if cr_cat and cr_val_nom is not None:
-                    idx_cr_nom = find_idxs(h_qcd, cr_cat, "nominal")
-                    tmp_arr[idx_cr_nom].value = cr_val_nom
-                    tmp_arr[idx_cr_nom].variance = cr_var_nom
+                    _assign_qcd_slot(
+                        h_qcd,
+                        tmp_arr,
+                        cr_cat,
+                        "nominal",
+                        cr_val_nom,
+                        cr_var_nom,
+                        context=f"{config.name}, {cr_cat}, nominal control region",
+                    )
 
                 for shift in shift_sources:
                     if shift == "nominal":
@@ -317,18 +589,58 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
 
                     mc = {}
                     for reg_name, full_name in sr.aux["abcd_regs"].items():
+                        if full_name not in mc_categories:
+                            logger.warning(
+                                f"[QCD] MC category '{full_name}' not available "
+                                f"for config '{config.name}', SR category '{the_cat}', shift '{shift}'"
+                            )
+                            continue
+
                         loc_dict_mc = {
                             "category": hist.loc(full_name),
                             "shift": hist.loc(shift_mc),
                         }
-                        if full_name in list(full_mc.axes["category"]):
-                            mc[reg_name] = full_mc[loc_dict_mc]
+                        mc[reg_name] = full_mc[loc_dict_mc]
 
                     if flat_tf:
                         tf = 1.0
                     else:
+                        if ("dr_num" not in d) or ("dr_den" not in d):
+                            logger.warning(
+                                f"[QCD] missing data dr_num/dr_den for '{the_cat}', shift '{shift}', "
+                                "cannot compute non-flat TF; skipping this shift"
+                            )
+                            continue
+
+                        if ("dr_num" not in mc) or ("dr_den" not in mc):
+                            logger.warning(
+                                f"[QCD] missing MC dr_num/dr_den for '{the_cat}', shift '{shift}', "
+                                "cannot compute non-flat TF; skipping this shift"
+                            )
+                            continue
+
+                        _assert_same_hist_shape(
+                            "QCD TF shifted numerator",
+                            d["dr_num"],
+                            mc["dr_num"],
+                            config,
+                            the_cat,
+                            "dr_num",
+                            shift,
+                        )
+                        _assert_same_hist_shape(
+                            "QCD TF shifted denominator",
+                            d["dr_den"],
+                            mc["dr_den"],
+                            config,
+                            the_cat,
+                            "dr_den",
+                            shift,
+                        )
+
                         num = d["dr_num"].values() - mc["dr_num"].values()
                         den = d["dr_den"].values() - mc["dr_den"].values()
+
                         tf = np.divide(
                             num,
                             den,
@@ -337,6 +649,15 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                         )
 
                     if "ar" in mc:
+                        _assert_same_hist_shape(
+                            "QCD AR shifted subtraction",
+                            d_ar,
+                            mc["ar"],
+                            config,
+                            the_cat,
+                            "ar",
+                            shift,
+                        )
                         mc_ar_val = mc["ar"].values()
                         mc_ar_var = mc["ar"].view().variance
                     else:
@@ -349,12 +670,28 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                     if shift.endswith("_up") or shift.endswith("_down"):
                         print(f"[QCD] {config.name} {the_cat} {shift}: {fmt_vals(val_before)}")
 
-                    idx = find_idxs(h_qcd, the_cat, shift)
-                    tmp_arr[idx].value = val_before
-                    tmp_arr[idx].variance = var_before
+                    _assign_qcd_slot(
+                        h_qcd,
+                        tmp_arr,
+                        the_cat,
+                        shift,
+                        val_before,
+                        var_before,
+                        context=f"{config.name}, {the_cat}, {shift}",
+                    )
 
                     if cr_cat:
                         if ("dr_den" in d) and ("dr_den" in mc):
+                            _assert_same_hist_shape(
+                                "QCD CR shifted subtraction",
+                                d["dr_den"],
+                                mc["dr_den"],
+                                config,
+                                the_cat,
+                                "dr_den",
+                                shift,
+                            )
+
                             cr_val_before = np.maximum(
                                 d["dr_den"].values() - mc["dr_den"].values(),
                                 0.0,
@@ -366,15 +703,24 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                             cr_val_before = d["dr_den"].values()
                             cr_var_before = d["dr_den"].view().variance
                         else:
-                            cr_val_before = 0.0
-                            cr_var_before = 0.0
+                            cr_val_before = np.zeros_like(d_ar.values())
+                            cr_var_before = np.zeros_like(d_ar.view().variance)
 
                         if shift.endswith("_up") or shift.endswith("_down"):
-                            print(f"[QCD-CR] {config.name} {cr_cat} {shift}: {fmt_vals(cr_val_before)}")
+                            print(
+                                f"[QCD-CR] {config.name} {cr_cat} {shift}: "
+                                f"{fmt_vals(cr_val_before)}"
+                            )
 
-                        idx_cr = find_idxs(h_qcd, cr_cat, shift)
-                        tmp_arr[idx_cr].value = cr_val_before
-                        tmp_arr[idx_cr].variance = cr_var_before
+                        _assign_qcd_slot(
+                            h_qcd,
+                            tmp_arr,
+                            cr_cat,
+                            shift,
+                            cr_val_before,
+                            cr_var_before,
+                            context=f"{config.name}, {cr_cat}, {shift} control region",
+                        )
 
             h_qcd[...] = tmp_arr
             output[config] = hists

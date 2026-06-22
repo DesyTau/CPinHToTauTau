@@ -85,8 +85,8 @@ class hcp_model(HCPModelBase):
         MASS_POINTS = read_bdt_masses()
         MASS_POINTS = [100]
         for m in MASS_POINTS:
-            g = f"h_ggf_htt_{m}"
-            b = f"bbh_htt_{m}"
+            g = f"ggphi_phitt_{m}"
+            b = f"bbphi_phitt_{m}"
             process_vs_dataset_names[g] = [g]
             process_vs_dataset_names[b] = [b]
 
@@ -150,7 +150,7 @@ class hcp_model(HCPModelBase):
 
                     # mark as signal if any mapped process is a signal
                     pin = proc_inst.name
-                    if ("h_ggf_htt" in pin) or ("bbh_htt" in pin):
+                    if ("ggphi_phitt" in pin) or ("bbphi_phitt" in pin):
                         is_signal = True
 
                     # collect datasets for each mapped process
