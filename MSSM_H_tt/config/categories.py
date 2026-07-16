@@ -176,51 +176,32 @@ def add_categories(config: od.Config,
 
     MASS_POINTS = read_bdt_masses()
 
-    # Four-region BDT approach.
+    # Merged three-region BDT approach.
     #
-    # The selections below are produced dynamically in categorization/main.py
-    # and read bdt_cat_M{mass} with the convention:
+    # The selections below are produced dynamically in categorization/main.py.
+    # They use the raw four-class probabilities from the BDT-score producer:
     #
-    #   0 -> ggphi = max(P_ggphi, P_bbphi, P_DY, P_TT) is P_ggphi
-    #   1 -> bbphi = max(P_ggphi, P_bbphi, P_DY, P_TT) is P_bbphi
-    #   2 -> dy    = max(P_ggphi, P_bbphi, P_DY, P_TT) is P_DY
-    #   3 -> tt    = max(P_ggphi, P_bbphi, P_DY, P_TT) is P_TT
+    #   P_sig = P_ggphi + P_bbphi
     #
-    # Each category also declares its intended fit variable.
+    # and define the fit regions through:
     #
-    # The fit variables must be produced consistently by the BDT-score producer:
+    #   signal region : P_sig is larger than both P_DY and P_TT
+    #   DY region     : P_DY  is larger than both P_sig and P_TT
+    #   TT region     : P_TT  is larger than both P_sig and P_DY
     #
-    #   bdt_D_ggphi_M{mass}
-    #   bdt_D_bbphi_M{mass}
-    #   bdt_D_DY_M{mass}
-    #   bdt_D_TT_M{mass}
+    # This matches the 10-feature training setup, whose adaptive post-processing
+    # produces the signal-region flattened 2D variables:
+    #
+    #   bdt_D_sig_vs_Disc_ggphi_M{mass}
+    #   bdt_D_sig_vs_Disc_bbphi_M{mass}
+    #
+    # The old standalone ggphi and bbphi four-class fit categories are not added
+    # here, because they would overlap with the merged signal-like region. They
+    # can still exist as diagnostic categorizers in categorization/main.py.
 
     bdt_cats_map = DotDict.wrap({})
 
     bdt_regions = {
-        "ggphi": {
-            "label": "ggϕ",
-            "selection": "bdt_cat_ggphi",
-            "fit_var": "D_ggphi",
-        },
-        "bbphi": {
-            "label": "bbϕ",
-            "selection": "bdt_cat_bbphi",
-            "fit_var": "D_bbphi",
-        },
-
-        # Combined signal-like BDT region:
-        #
-        # This category should select events where the BDT winner is either
-        # ggphi or bbphi, i.e.
-        #
-        #   bdt_cat_M{m} == 0 or bdt_cat_M{m} == 1
-        #
-        # It carries two fit variables:
-        #
-        #   bdt_D_sig_vs_Disc_ggphi_M{m}  -> for ggphi extraction
-        #   bdt_D_sig_vs_Disc_bbphi_M{m}  -> for bbphi extraction
-        #
         "ggphi_and_bbphi": {
             "label": "ggϕ + bbϕ",
             "selection": "bdt_cat_ggphi_and_bbphi",
@@ -229,7 +210,6 @@ def add_categories(config: od.Config,
                 "D_sig_vs_Disc_bbphi",
             ],
         },
-
         "dy": {
             "label": "DY",
             "selection": "bdt_cat_dy",

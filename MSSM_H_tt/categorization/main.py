@@ -1,7 +1,7 @@
 # coding: utf-8
 
 """
-Main categories file for the Higgs CP analysis
+Main categories file for the Higgs MSSM analysis
 """
 
 from columnflow.categorization import Categorizer, categorizer
@@ -208,80 +208,40 @@ def tau_no_fakes(self: Categorizer, events: ak.Array, **kwargs) -> tuple[ak.Arra
         mask = ak.ones_like(events.event, dtype=np.bool_)
     return events, mask
 
-# Higgs BDT four-class score categories ---------------------------------------
-
-def _bdt_cat_mass(
-    self: Categorizer,
-    events: ak.Array,
-    cat_id: int,
-    mass: int,
-    **kwargs,
-) -> tuple[ak.Array, ak.Array]:
-    """
-    Per-mass BDT region selection for the current four-class BDT.
-
-    The BDT-score producer should write:
-
-        bdt_cat_M{mass} = argmax(P_ggphi, P_bbphi, P_DY, P_TT)
-
-    with the convention:
-
-        0 -> ggphi
-        1 -> bbphi
-        2 -> dy
-        3 -> tt
-    """
-    field = f"bdt_cat_M{mass}"
-
-    if field not in events.fields:
-        raise RuntimeError(
-            f"Missing BDT category field '{field}'. "
-            "Check that the BDT-score producer was run and that it writes "
-            f"bdt_cat_M{mass}."
-        )
-
-    mask = events[field] == cat_id
-
-    return events, ak.fill_none(mask, False)
+# Higgs BDT score categories ---------------------------------------------------
+#
+# The score producer writes the four raw class probabilities
+#
+#   bdt_raw_score_ggphi_M{mass}
+#   bdt_raw_score_bbphi_M{mass}
+#   bdt_raw_score_dy_M{mass}
+#   bdt_raw_score_tt_M{mass}
+#
+# and the four-class argmax category
+#
+#   bdt_cat_M{mass} = argmax(P_ggphi, P_bbphi, P_DY, P_TT)
+#
+# The new 10-feature training also uses a three-region merged convention in
+# several post-processing steps:
+#
+#   signal region -> max(P_ggphi + P_bbphi, P_DY, P_TT) = P_ggphi + P_bbphi
+#   DY region     -> max(P_ggphi + P_bbphi, P_DY, P_TT) = P_DY
+#   TT region     -> max(P_ggphi + P_bbphi, P_DY, P_TT) = P_TT
+#
+# Both conventions are exposed below.  The default signal/DY/TT names use the
+# merged convention, while explicit four-class names are kept for diagnostics.
 
 
-def _bdt_cat_ggphi_and_bbphi_mass(
-    self: Categorizer,
-    events: ak.Array,
-    mass: int,
-    **kwargs,
-) -> tuple[ak.Array, ak.Array]:
-    """
-    Per-mass combined signal-like BDT region.
+def _bdt_raw_score_fields(mass: int) -> dict[str, str]:
+    return {
+        "ggphi": f"bdt_raw_score_ggphi_M{mass}",
+        "bbphi": f"bdt_raw_score_bbphi_M{mass}",
+        "dy": f"bdt_raw_score_dy_M{mass}",
+        "tt": f"bdt_raw_score_tt_M{mass}",
+    }
 
-    Definition:
 
-        P_sig = P_ggphi + P_bbphi
-
-    Select events where:
-
-        P_sig >= P_DY
-        P_sig >= P_TT
-
-    This is not the same as selecting:
-
-        bdt_cat_M{mass} == 0 or bdt_cat_M{mass} == 1
-
-    because an event can have neither P_ggphi nor P_bbphi individually maximal,
-    while their sum is still larger than both P_DY and P_TT.
-    """
-    ggphi_field = f"bdt_raw_score_ggphi_M{mass}"
-    bbphi_field = f"bdt_raw_score_bbphi_M{mass}"
-    dy_field = f"bdt_raw_score_dy_M{mass}"
-    tt_field = f"bdt_raw_score_tt_M{mass}"
-
-    required_fields = [
-        ggphi_field,
-        bbphi_field,
-        dy_field,
-        tt_field,
-    ]
-
+def _check_bdt_fields(events: ak.Array, required_fields: list[str], context: str) -> None:
     missing_fields = [
         field
         for field in required_fields
@@ -290,20 +250,104 @@ def _bdt_cat_ggphi_and_bbphi_mass(
 
     if missing_fields:
         raise RuntimeError(
-            "Missing BDT raw-score fields needed for the combined "
-            f"ggphi_and_bbphi category for mass {mass}: {missing_fields}. "
-            "Check that the BDT-score producer writes the raw scores:"
-            f" {required_fields}."
+            f"Missing BDT fields for {context}: {missing_fields}. "
+            "Check that the BDT-score producer was run before categorization."
         )
 
-    p_sig = events[ggphi_field] + events[bbphi_field]
-    p_dy = events[dy_field]
-    p_tt = events[tt_field]
 
-    mask = (
-        (p_sig >= p_dy)
-        & (p_sig >= p_tt)
+def _bdt_cat_fourclass_mass(
+    self: Categorizer,
+    events: ak.Array,
+    cat_id: int,
+    mass: int,
+    **kwargs,
+) -> tuple[ak.Array, ak.Array]:
+    """
+    Per-mass four-class BDT region selection.
+
+    Definition:
+
+        bdt_cat_M{mass} = argmax(P_ggphi, P_bbphi, P_DY, P_TT)
+
+    Convention:
+
+        0 -> ggphi
+        1 -> bbphi
+        2 -> DY
+        3 -> TT
+    """
+    field = f"bdt_cat_M{mass}"
+
+    _check_bdt_fields(
+        events,
+        [field],
+        context=f"four-class BDT category M={mass}",
     )
+
+    mask = events[field] == int(cat_id)
+
+    return events, ak.fill_none(mask, False)
+
+
+def _bdt_merged_scores_mass(
+    events: ak.Array,
+    mass: int,
+) -> tuple[ak.Array, ak.Array, ak.Array]:
+    """
+    Return the three merged-region scores:
+
+        P_signal = P_ggphi + P_bbphi
+        P_DY
+        P_TT
+    """
+    fields = _bdt_raw_score_fields(mass)
+
+    _check_bdt_fields(
+        events,
+        list(fields.values()),
+        context=f"merged BDT category M={mass}",
+    )
+
+    p_signal = events[fields["ggphi"]] + events[fields["bbphi"]]
+    p_dy = events[fields["dy"]]
+    p_tt = events[fields["tt"]]
+
+    return p_signal, p_dy, p_tt
+
+
+def _bdt_cat_merged_mass(
+    self: Categorizer,
+    events: ak.Array,
+    merged_cat_id: int,
+    mass: int,
+    **kwargs,
+) -> tuple[ak.Array, ak.Array]:
+    """
+    Per-mass three-region BDT category selection.
+
+    Definition:
+
+        merged_cat = argmax(P_ggphi + P_bbphi, P_DY, P_TT)
+
+    Convention:
+
+        0 -> signal = ggphi + bbphi
+        1 -> DY
+        2 -> TT
+    """
+    p_signal, p_dy, p_tt = _bdt_merged_scores_mass(events, mass)
+
+    if int(merged_cat_id) == 0:
+        mask = (p_signal >= p_dy) & (p_signal >= p_tt)
+    elif int(merged_cat_id) == 1:
+        mask = (p_dy > p_signal) & (p_dy >= p_tt)
+    elif int(merged_cat_id) == 2:
+        mask = (p_tt > p_signal) & (p_tt > p_dy)
+    else:
+        raise ValueError(
+            f"Unknown merged BDT category id {merged_cat_id}. "
+            "Expected 0=signal, 1=DY, 2=TT."
+        )
 
     return events, ak.fill_none(mask, False)
 
@@ -314,29 +358,50 @@ MASS_POINTS = read_bdt_masses()
 
 
 BDT_REGION_SPECS = {
-    "ggphi": {
-        "kind": "single",
+    # Main three-region convention used by the new 10-feature training
+    # post-processing and by the merged-region plots.
+    "signal": {
+        "kind": "merged",
         "cat_id": 0,
-        "description": "BDT region where P_ggphi is maximal",
-    },
-    "bbphi": {
-        "kind": "single",
-        "cat_id": 1,
-        "description": "BDT region where P_bbphi is maximal",
+        "description": "Merged BDT region where P_ggphi + P_bbphi is maximal",
     },
     "ggphi_and_bbphi": {
-        "kind": "signal_sum",
-        "description": "BDT region where P_ggphi + P_bbphi is maximal",
+        "kind": "merged",
+        "cat_id": 0,
+        "description": "Alias of signal: merged BDT region where P_ggphi + P_bbphi is maximal",
     },
     "dy": {
-        "kind": "single",
-        "cat_id": 2,
-        "description": "BDT region where P_DY is maximal",
+        "kind": "merged",
+        "cat_id": 1,
+        "description": "Merged BDT region where P_DY is maximal against P_ggphi + P_bbphi and P_TT",
     },
     "tt": {
-        "kind": "single",
+        "kind": "merged",
+        "cat_id": 2,
+        "description": "Merged BDT region where P_TT is maximal against P_ggphi + P_bbphi and P_DY",
+    },
+
+    # Explicit four-class regions kept for diagnostics and backwards-compatible
+    # control plots.  These use bdt_cat_M{mass} directly.
+    "ggphi": {
+        "kind": "fourclass",
+        "cat_id": 0,
+        "description": "Four-class BDT region where P_ggphi is maximal",
+    },
+    "bbphi": {
+        "kind": "fourclass",
+        "cat_id": 1,
+        "description": "Four-class BDT region where P_bbphi is maximal",
+    },
+    "dy_fourclass": {
+        "kind": "fourclass",
+        "cat_id": 2,
+        "description": "Four-class BDT region where P_DY is maximal",
+    },
+    "tt_fourclass": {
+        "kind": "fourclass",
         "cat_id": 3,
-        "description": "BDT region where P_TT is maximal",
+        "description": "Four-class BDT region where P_TT is maximal",
     },
 }
 
@@ -349,13 +414,13 @@ BDT_REGION_DESCRIPTIONS = {
 
 for mass in MASS_POINTS:
     for region_name, spec in BDT_REGION_SPECS.items():
-        if spec["kind"] == "single":
+        if spec["kind"] == "fourclass":
             cat_id = spec["cat_id"]
 
             # Capture loop variables via defaults to avoid late binding.
             tmp_func = (
                 lambda self, events, _cat_id=cat_id, _mass=mass, **kwargs:
-                    _bdt_cat_mass(
+                    _bdt_cat_fourclass_mass(
                         self,
                         events,
                         cat_id=_cat_id,
@@ -368,24 +433,23 @@ for mass in MASS_POINTS:
                 f"bdt_cat_M{mass}",
             }
 
-        elif spec["kind"] == "signal_sum":
-            # Capture loop variable via default to avoid late binding.
+        elif spec["kind"] == "merged":
+            cat_id = spec["cat_id"]
+
+            # Capture loop variables via defaults to avoid late binding.
             tmp_func = (
-                lambda self, events, _mass=mass, **kwargs:
-                    _bdt_cat_ggphi_and_bbphi_mass(
+                lambda self, events, _cat_id=cat_id, _mass=mass, **kwargs:
+                    _bdt_cat_merged_mass(
                         self,
                         events,
+                        merged_cat_id=_cat_id,
                         mass=_mass,
                         **kwargs,
                     )
             )
 
-            uses = {
-                f"bdt_raw_score_ggphi_M{mass}",
-                f"bdt_raw_score_bbphi_M{mass}",
-                f"bdt_raw_score_dy_M{mass}",
-                f"bdt_raw_score_tt_M{mass}",
-            }
+            fields = _bdt_raw_score_fields(mass)
+            uses = set(fields.values())
 
         else:
             raise ValueError(

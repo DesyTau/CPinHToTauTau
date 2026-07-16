@@ -22,7 +22,7 @@ def mT(p4_1, p4_2):
 
 @producer(
     uses={
-        'hcand_*', 'RecoilCorrMET*'
+        'hcand_*', 'RecoilCorrMET.*'
     },
     produces={
         'hcand_*'
@@ -55,7 +55,7 @@ def hcand_fields(
 
 @producer(
     uses={
-        'hcand_*', 'RecoilCorrMET*'
+        'hcand_*', 'RecoilCorrMET.*'
     },
     produces={
         'hcand_*'

@@ -1201,13 +1201,13 @@ def add_run3(ana: od.Analysis,
         "unclustered",
         {
             f"{cfg.x.met_name}.pt": f"{cfg.x.met_name}.pt_{{name}}",
-            f"{cfg.x.met_name}.phi": f"{cfg.x.met_name}.sphi_{{name}}",
+            f"{cfg.x.met_name}.phi": f"{cfg.x.met_name}.phi_{{name}}",
 
-            # needed if D_zeta, mT, fastMTT, pt_H read RecoilCorrMET
             "RecoilCorrMET.pt": "RecoilCorrMET.pt_{name}",
             "RecoilCorrMET.phi": "RecoilCorrMET.phi_{name}",
         },
     )
+    
     # add column aliases for shift jec
     for i, (jec_source, flag) in enumerate(all_jec_sources.items()):
         if not flag:
@@ -1313,8 +1313,8 @@ def add_run3(ana: od.Analysis,
         cfg,
         "recoilresp",
         {
-            f"{cfg.x.met_name}.pt": "RecoilCorrMET.pt_{name}",
-            f"{cfg.x.met_name}.phi": "RecoilCorrMET.phi_{name}",
+            "RecoilCorrMET.pt": "RecoilCorrMET.pt_{name}",
+            "RecoilCorrMET.phi": "RecoilCorrMET.phi_{name}",
         },
     )
 
@@ -1324,8 +1324,8 @@ def add_run3(ana: od.Analysis,
         cfg,
         "recoilres",
         {
-            f"{cfg.x.met_name}.pt": "RecoilCorrMET.pt_{name}",
-            f"{cfg.x.met_name}.phi": "RecoilCorrMET.phi_{name}",
+            "RecoilCorrMET.pt": "RecoilCorrMET.pt_{name}",
+            "RecoilCorrMET.phi": "RecoilCorrMET.phi_{name}",
         },
     )
     # event weight columns as keys in an OrderedDict, mapped to shift instances they depend on

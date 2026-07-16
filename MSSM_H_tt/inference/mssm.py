@@ -10,12 +10,51 @@ from columnflow.inference import inference_model, ParameterType
 from columnflow.config_util import get_datasets_from_process
 from MSSM_H_tt.inference.base import HCPModelBase
 from MSSM_H_tt.config.mass_points import read_bdt_masses
-
+import re
 
 class MSSM_model(HCPModelBase):
     """
     Default statistical model for MSSM analysis.
     """
+    @staticmethod
+    def _bdt_hist_group_for_variable(variable: str) -> set[str]:
+        """
+        For any final MSSM BDT datacard variable of a given mass, return the full
+        four-variable group that should be produced together upstream.
+
+        This affects only histogram requirements, not the datacard category
+        definition itself.
+        """
+        match = re.match(
+            r"^bdt_(D_sig_vs_Disc_ggphi|D_sig_vs_Disc_bbphi|D_DY|D_TT)_M([0-9]+)$",
+            variable,
+        )
+
+        if not match:
+            return {variable}
+
+        mass = match.group(2)
+
+        return {
+            f"bdt_D_sig_vs_Disc_ggphi_M{mass}",
+            f"bdt_D_sig_vs_Disc_bbphi_M{mass}",
+            f"bdt_D_DY_M{mass}",
+            f"bdt_D_TT_M{mass}",
+        }
+
+
+    def get_hist_requirement_variables(self, variables: set[str]) -> set[str]:
+        """
+        Expand one BDT datacard variable into the full four-variable group for the
+        same mass, so all four datacard models share the same upstream histogram
+        production.
+        """
+        out = set()
+
+        for variable in variables:
+            out |= self._bdt_hist_group_for_variable(variable)
+
+        return out
 
     name = "MSSM_model"
     add_qcd = True
@@ -31,15 +70,62 @@ class MSSM_model(HCPModelBase):
     signal_mass = None          # e.g. 100
     signal_kind = None          # None, "ggphi", or "bbphi"
 
-    # Supported values:
+    # Supported canonical values:
     #
     #   None
-    #   "sig_vs_disc_ggphi"
-    #   "sig_vs_disc_bbphi"
-    #   "dy"
-    #   "tt"
+    #   "D_sig_vs_Disc_ggphi"
+    #   "D_sig_vs_Disc_bbphi"
+    #   "D_DY"
+    #   "D_TT"
     #
+    # Backward-compatible aliases such as "sig_vs_disc_ggphi",
+    # "sig_vs_disc_bbphi", "dy", and "tt" are normalized below.
     bdt_discriminant = None
+
+    # Canonical names used for BDT datacard categories and variables.
+    #
+    # Region names should match the category-config names:
+    #
+    #   cat_{ch}_sr__bdt_signal_M{mass}
+    #   cat_{ch}_sr__bdt_dy_M{mass}
+    #   cat_{ch}_sr__bdt_tt_M{mass}
+    #
+    # The previous signal-like region name,
+    #
+    #   cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
+    #
+    # is kept only as a fallback alias.
+    bdt_discriminant_aliases = {
+        "sig_vs_disc_ggphi": "D_sig_vs_Disc_ggphi",
+        "sig_vs_disc_bbphi": "D_sig_vs_Disc_bbphi",
+        "dy": "D_DY",
+        "tt": "D_TT",
+    }
+
+    bdt_card_specs = {
+        "D_sig_vs_Disc_ggphi": {
+            "region": "signal",
+            "variable": "D_sig_vs_Disc_ggphi",
+        },
+        "D_sig_vs_Disc_bbphi": {
+            "region": "signal",
+            "variable": "D_sig_vs_Disc_bbphi",
+        },
+        "D_DY": {
+            "region": "dy",
+            "variable": "D_DY",
+        },
+        "D_TT": {
+            "region": "tt",
+            "variable": "D_TT",
+        },
+    }
+
+    bdt_region_aliases = {
+        "signal": ("signal", "ggphi_and_bbphi"),
+        "dy": ("dy",),
+        "tt": ("tt",),
+    }
 
     processes: list = []
     config_categories: list = []
@@ -151,6 +237,35 @@ class MSSM_model(HCPModelBase):
             )
 
         return data_datasets
+
+    def _normalize_bdt_discriminant(self, discriminant):
+        if discriminant is None:
+            return None
+
+        return self.bdt_discriminant_aliases.get(discriminant, discriminant)
+
+    def _bdt_region_category_candidates(self, ch: str, region: str, mass) -> list[str]:
+        region_aliases = self.bdt_region_aliases.get(region, (region,))
+
+        return [
+            f"cat_{ch}_sr__bdt_{region_name}_M{mass}"
+            for region_name in region_aliases
+        ]
+
+    def _resolve_bdt_region_category(self, config_inst, ch: str, region: str, mass) -> str:
+        candidates = self._bdt_region_category_candidates(ch, region, mass)
+
+        for category_name in candidates:
+            try:
+                config_inst.get_category(category_name)
+                return category_name
+            except Exception:
+                pass
+
+        raise ValueError(
+            f"Could not find any BDT category for region '{region}' and mass {mass} "
+            f"in config '{config_inst.name}'. Tried: {candidates}"
+        )
 
     # -------------------------------------------------------------------------
     # process map
@@ -296,38 +411,45 @@ class MSSM_model(HCPModelBase):
         cfg0 = config_insts[0]
         ch = cfg0.channels.names()[0]
 
-        # New datacard mode.
+        # New merged-region BDT datacard mode.
         #
-        # Four one-category datacard models per mass point:
+        # Canonical region names:
         #
-        # 1. ggphi extraction:
-        #      category = cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
-        #      variable = bdt_D_sig_vs_Disc_ggphi_M{mass}
+        #   signal : P_ggphi + P_bbphi is maximal against P_DY and P_TT
+        #   dy     : P_DY is maximal against P_ggphi + P_bbphi and P_TT
+        #   tt     : P_TT is maximal against P_ggphi + P_bbphi and P_DY
         #
-        # 2. bbphi extraction:
-        #      category = cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
-        #      variable = bdt_D_sig_vs_Disc_bbphi_M{mass}
+        # Canonical category names are:
         #
-        # 3. DY region:
-        #      category = cat_{ch}_sr__bdt_dy_M{mass}
-        #      variable = bdt_D_DY_M{mass}
+        #   cat_{ch}_sr__bdt_signal_M{mass}
+        #   cat_{ch}_sr__bdt_dy_M{mass}
+        #   cat_{ch}_sr__bdt_tt_M{mass}
         #
-        # 4. TT region:
-        #      category = cat_{ch}_sr__bdt_tt_M{mass}
-        #      variable = bdt_D_TT_M{mass}
+        # The old signal-like name
         #
+        #   cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
+        #
+        # is accepted as a fallback while transitioning configs.
+        #
+        # Produced variable names are kept unchanged because they match the
+        # BDT-score and BDT-2D producers:
+        #
+        #   bdt_D_sig_vs_Disc_ggphi_M{mass}
+        #   bdt_D_sig_vs_Disc_bbphi_M{mass}
+        #   bdt_D_DY_M{mass}
+        #   bdt_D_TT_M{mass}
         if self.bdt_discriminant is not None:
-            valid_discriminants = {
-                "sig_vs_disc_ggphi",
-                "sig_vs_disc_bbphi",
-                "dy",
-                "tt",
-            }
+            discriminant = self._normalize_bdt_discriminant(self.bdt_discriminant)
 
-            if self.bdt_discriminant not in valid_discriminants:
+            if discriminant not in self.bdt_card_specs:
+                valid = sorted(
+                    set(self.bdt_card_specs.keys())
+                    | set(self.bdt_discriminant_aliases.keys())
+                )
+
                 raise ValueError(
                     f"Invalid bdt_discriminant '{self.bdt_discriminant}'. "
-                    f"Valid values are: {sorted(valid_discriminants)}"
+                    f"Valid values are: {valid}"
                 )
 
             masses = self.get_mass_points()
@@ -340,38 +462,34 @@ class MSSM_model(HCPModelBase):
                 )
 
             mass = masses[0]
+            card_spec = self.bdt_card_specs[discriminant]
 
-            card_map = {
-                "sig_vs_disc_ggphi": {
-                    "category": f"cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}",
-                    "variable": f"bdt_D_sig_vs_Disc_ggphi_M{mass}",
-                },
-                "sig_vs_disc_bbphi": {
-                    "category": f"cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}",
-                    "variable": f"bdt_D_sig_vs_Disc_bbphi_M{mass}",
-                },
-                "dy": {
-                    "category": f"cat_{ch}_sr__bdt_dy_M{mass}",
-                    "variable": f"bdt_D_DY_M{mass}",
-                },
-                "tt": {
-                    "category": f"cat_{ch}_sr__bdt_tt_M{mass}",
-                    "variable": f"bdt_D_TT_M{mass}",
-                },
-            }
+            region = card_spec["region"]
+            variable_name = f"bdt_{card_spec['variable']}_M{mass}"
 
-            card_spec = card_map[self.bdt_discriminant]
-
-            category_name = card_spec["category"]
-            variable_name = card_spec["variable"]
+            # Use the first config to define the inference-category name.  The
+            # per-config category names below can still resolve independently,
+            # which makes mixed old/new configs possible during transition.
+            category_name = self._resolve_bdt_region_category(
+                config_insts[0],
+                ch,
+                region,
+                mass,
+            )
 
             config_data = {}
 
             for config_inst in config_insts:
                 data_datasets = self._get_data_datasets(config_inst, ch)
+                cfg_category_name = self._resolve_bdt_region_category(
+                    config_inst,
+                    ch,
+                    region,
+                    mass,
+                )
 
                 config_data[config_inst.name] = self.category_config_spec(
-                    category=category_name,
+                    category=cfg_category_name,
                     variable=variable_name,
                     data_datasets=data_datasets,
                 )
@@ -385,32 +503,43 @@ class MSSM_model(HCPModelBase):
 
             return
 
-        # Legacy mode kept for the unspecialized base model.
-        category_kinds = []
-
-        if self.signal_kind in (None, "ggphi"):
-            category_kinds.append("ggphi")
-        if self.signal_kind in (None, "bbphi"):
-            category_kinds.append("bbphi")
-
-        category_kinds.extend(["dy", "tt"])
-        category_kinds = self._dedup_keep_order(category_kinds)
+        # Unspecialized base model: use the same merged three-region naming.
+        # This mode is mostly for checks; production datacards should normally
+        # use one of the mass/discriminant-specific derived models below.
+        base_category_specs = [
+            ("signal", "D_sig"),
+            ("dy", "D_DY"),
+            ("tt", "D_TT"),
+        ]
 
         for mass in self.get_mass_points():
-            for kind in category_kinds:
+            for region, variable in base_category_specs:
                 config_data = {}
+
+                category_name = self._resolve_bdt_region_category(
+                    config_insts[0],
+                    ch,
+                    region,
+                    mass,
+                )
 
                 for config_inst in config_insts:
                     data_datasets = self._get_data_datasets(config_inst, ch)
+                    cfg_category_name = self._resolve_bdt_region_category(
+                        config_inst,
+                        ch,
+                        region,
+                        mass,
+                    )
 
                     config_data[config_inst.name] = self.category_config_spec(
-                        category=f"cat_{ch}_sr__bdt_{kind}_M{mass}",
-                        variable=f"bdt_raw_score_{kind}_M{mass}",
+                        category=cfg_category_name,
+                        variable=f"bdt_{variable}_M{mass}",
                         data_datasets=data_datasets,
                     )
 
                 self.add_category(
-                    name=f"cat_{ch}_sr__bdt_{kind}_M{mass}",
+                    name=category_name,
                     config_data=config_data,
                     mc_stats=True,
                     empty_bin_value=0.0,
@@ -916,7 +1045,7 @@ for _m in read_bdt_masses():
     # 1. ggphi extraction
     #
     # category:
-    #   cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
+    #   cat_{ch}_sr__bdt_signal_M{mass}
     #
     # variable:
     #   bdt_D_sig_vs_Disc_ggphi_M{mass}
@@ -930,7 +1059,7 @@ for _m in read_bdt_masses():
         cls_dict={
             "signal_mass": _m,
             "signal_kind": "ggphi",
-            "bdt_discriminant": "sig_vs_disc_ggphi",
+            "bdt_discriminant": "D_sig_vs_Disc_ggphi",
         },
     )
 
@@ -938,7 +1067,7 @@ for _m in read_bdt_masses():
     # 2. bbphi extraction
     #
     # category:
-    #   cat_{ch}_sr__bdt_ggphi_and_bbphi_M{mass}
+    #   cat_{ch}_sr__bdt_signal_M{mass}
     #
     # variable:
     #   bdt_D_sig_vs_Disc_bbphi_M{mass}
@@ -952,7 +1081,7 @@ for _m in read_bdt_masses():
         cls_dict={
             "signal_mass": _m,
             "signal_kind": "bbphi",
-            "bdt_discriminant": "sig_vs_disc_bbphi",
+            "bdt_discriminant": "D_sig_vs_Disc_bbphi",
         },
     )
 
@@ -974,7 +1103,7 @@ for _m in read_bdt_masses():
         cls_dict={
             "signal_mass": _m,
             "signal_kind": None,
-            "bdt_discriminant": "dy",
+            "bdt_discriminant": "D_DY",
         },
     )
 
@@ -996,6 +1125,6 @@ for _m in read_bdt_masses():
         cls_dict={
             "signal_mass": _m,
             "signal_kind": None,
-            "bdt_discriminant": "tt",
+            "bdt_discriminant": "D_TT",
         },
     )

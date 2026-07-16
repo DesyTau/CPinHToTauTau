@@ -17,12 +17,22 @@ from pathlib import Path
 # BDT adaptive-bin edge files produced by the training post-processing.
 # This must match the OUTPUT_BASE used when creating the score tables and
 # running the common low/high-mass adaptive rebinning step.
+#
+# BDT adaptive edges.  This path is intentionally explicit because the 2D
+# y-merged binning files are produced under this training-output directory.
+# Change only this constant if you switch to another training output, e.g.
+# bdt_3_classes_10_features_rawJetCounts.
 BDT_OUTPUT_BASE = Path(
     "/eos/project/d/desytau/public/jmalvaso/"
-    "bdt_4_classes_phi_no_DY_tail_focus_normWeightTraining_clippedJetCounts"
+    "bdt_3_classes_10_features_clippedJetCounts"
 )
 BDT_ADAPTIVE_TAG = "combined_crossApplied"
 BDT_DEFAULT_SCORE_BINNING = (30, 0.0, 1.0)
+
+# Location of the irregular/y-merged 2D binning JSON files created by
+# adaptive_plot_2d_discriminant_pair(...).
+BDT_2D_ADAPTIVE_SUBDIR = "independent_adaptive"
+BDT_2D_YMERGED_TOKEN = "yMergedMinWeightedBkg"
 
 
 def _bdt_mass_region_name(mass: int) -> str:
@@ -962,69 +972,144 @@ def add_dilepton_features(cfg: od.Config) -> None:
 # MSSM BDT output variables
 # =============================================================================
 
-# Derived 1D BDT variables produced by MSSM_H_tt/production/bdt_2d_variables.py
+# Outputs produced directly by the new 10-feature 4-class BDT score producer:
 #
+#   bdt_raw_score_{ggphi,bbphi,dy,tt}_M{mass}
+#   bdt_D_sig_M{mass}
+#   bdt_D_ggphi_M{mass}
+#   bdt_D_bbphi_M{mass}
 #   bdt_Disc_ggphi_M{mass}
 #   bdt_Disc_bbphi_M{mass}
+#   bdt_D_DY_M{mass}
+#   bdt_D_TT_M{mass}
+#   bdt_D_bbphi_sig_M{mass}
+#   bdt_D_ggphi_sig_M{mass}
+#   bdt_cat_M{mass}
 #
-# Binning convention:
-#   Disc_ggphi uses the same adaptive binning as D_ggphi
-#   Disc_bbphi uses the same adaptive binning as D_bbphi
-#
-BDT_DERIVED_1D_DISCRIMINANTS = {
+# The 2D flattened variables are still assumed to be produced by the dedicated
+# BDT 2D-variable producer. Their binning is derived from the same adaptive edge
+# JSON files written by the training post-processing.
+
+BDT_CLASS_LABELS = ("ggphi", "bbphi", "dy", "tt")
+
+BDT_CLASS_TITLES = {
+    "ggphi": r"gg$\phi$($\phi\rightarrow\tau\tau$)",
+    "bbphi": r"bb$\phi$($\phi\rightarrow\tau\tau$)",
+    "dy": "DY",
+    "tt": r"t$\bar{t}$",
+}
+
+# Discriminants with their own adaptive binning in the new training script.
+BDT_1D_DISCRIMINANTS = {
+    "D_sig": {
+        "title": r"$D_{\mathrm{sig}}$",
+        "binning_source": "D_sig",
+    },
+    "D_ggphi": {
+        "title": r"$D_{\mathrm{gg}\phi}$",
+        "binning_source": "D_ggphi",
+    },
+    "D_bbphi": {
+        "title": r"$D_{\mathrm{bb}\phi}$",
+        "binning_source": "D_bbphi",
+    },
     "Disc_ggphi": {
-        "source": "D_ggphi",
         "title": (
             r"$D_{\mathrm{gg}\phi}/"
             r"(D_{\mathrm{gg}\phi}+D_{\mathrm{bb}\phi})$"
         ),
+        "binning_source": "Disc_ggphi",
     },
     "Disc_bbphi": {
-        "source": "D_bbphi",
         "title": (
             r"$D_{\mathrm{bb}\phi}/"
             r"(D_{\mathrm{gg}\phi}+D_{\mathrm{bb}\phi})$"
         ),
+        "binning_source": "Disc_bbphi",
+    },
+    "D_DY": {
+        "title": r"$D_{\mathrm{DY}}$",
+        "binning_source": "D_DY",
+    },
+    "D_TT": {
+        "title": r"$D_{\mathrm{TT}}$",
+        "binning_source": "D_TT",
     },
 }
 
+# Diagnostic signal-splitting discriminants produced by the new score producer.
+# They are numerically equivalent to the Disc_* variables, so reuse those
+# adaptive edges when no dedicated edge file exists.
+BDT_DIAGNOSTIC_1D_DISCRIMINANTS = {
+    "D_ggphi_sig": {
+        "title": r"$P_{\mathrm{gg}\phi}/(P_{\mathrm{gg}\phi}+P_{\mathrm{bb}\phi})$",
+        "binning_source": "Disc_ggphi",
+    },
+    "D_bbphi_sig": {
+        "title": r"$P_{\mathrm{bb}\phi}/(P_{\mathrm{gg}\phi}+P_{\mathrm{bb}\phi})$",
+        "binning_source": "Disc_bbphi",
+    },
+}
+
+# Backward-compatible aliases for older plot/datacard configs.
+BDT_DISCRIMINANT_ALIASES = {
+    "D_dy": "D_DY",
+    "D_tt": "D_TT",
+}
 
 # Flattened 2D variables produced by MSSM_H_tt/production/bdt_2d_variables.py.
 #
-# The producer stores a flattened bin coordinate:
+# Rectangular 2D binning uses:
 #
 #   flat_index = ix * n_y_bins + iy
+#   n_flat_bins = n_x_bins * n_y_bins
 #
-# Therefore the plotting variable must use:
+# For y-merged 2D binnings, the JSON contains a different list of y edges in
+# each x bin.  In that case the flattened axis must contain one bin per
+# irregular 2D cell:
 #
-#   binning = (n_x_bins * n_y_bins, 0, n_x_bins * n_y_bins)
+#   n_flat_bins = sum(n_y_bins_in_this_x_bin for each x bin)
 #
+# The actual producer must use the same cumulative-offset convention when
+# assigning flat indices.
 BDT_2D_FLATTENED_PAIRS = (
+    ("D_sig_vs_Disc_ggphi", "D_sig", "Disc_ggphi"),
+    ("D_sig_vs_Disc_bbphi", "D_sig", "Disc_bbphi"),
     ("D_sig_vs_D_ggphi", "D_sig", "D_ggphi"),
     ("D_sig_vs_D_bbphi", "D_sig", "D_bbphi"),
     ("D_ggphi_vs_D_bbphi", "D_ggphi", "D_bbphi"),
-
-    # New derived-disc flattened 2D variables
-    ("D_sig_vs_Disc_ggphi", "D_sig", "Disc_ggphi"),
-    ("D_sig_vs_Disc_bbphi", "D_sig", "Disc_bbphi"),
 )
+
+# These pairs have a dedicated y-merged 2D binning JSON in the training
+# output.  The file names follow the training script convention
+#   2D_{y_name}_vs_{x_name}_yMergedMinWeightedBkg_edges_M{mass}_{tag}.json
+BDT_2D_YMERGED_PAIRS = {
+    ("D_sig", "Disc_ggphi"),
+    ("D_sig", "Disc_bbphi"),
+}
+
+
+def _bdt_all_1d_discriminants() -> dict:
+    out = {}
+    out.update(BDT_1D_DISCRIMINANTS)
+    out.update(BDT_DIAGNOSTIC_1D_DISCRIMINANTS)
+    return out
 
 
 def _bdt_discriminant_binning_source(discriminant: str) -> str:
     """
     Return the discriminant whose adaptive binning should be used.
 
-    For standard variables:
-      D_sig -> D_sig
-      D_ggphi -> D_ggphi
-      D_bbphi -> D_bbphi
-
-    For derived variables:
-      Disc_ggphi -> D_ggphi
-      Disc_bbphi -> D_bbphi
+    In the new training, Disc_ggphi and Disc_bbphi have their own adaptive
+    edge files. The diagnostic D_*_sig variables reuse those Disc_* edges.
     """
-    if discriminant in BDT_DERIVED_1D_DISCRIMINANTS:
-        return BDT_DERIVED_1D_DISCRIMINANTS[discriminant]["source"]
+    all_discriminants = _bdt_all_1d_discriminants()
+
+    if discriminant in all_discriminants:
+        return all_discriminants[discriminant]["binning_source"]
+
+    if discriminant in BDT_DISCRIMINANT_ALIASES:
+        return BDT_DISCRIMINANT_ALIASES[discriminant]
 
     return discriminant
 
@@ -1048,6 +1133,158 @@ def _bdt_n_bins_from_binning(binning) -> int:
     return len(b) - 1
 
 
+def _bdt_binning(mass: int, discriminant: str):
+    """
+    Return the adaptive binning for a BDT output variable.
+    """
+    source = _bdt_discriminant_binning_source(discriminant)
+    return _read_bdt_adaptive_binning(mass, source)
+
+
+
+def _bdt_ymerged_2d_edges_path(
+    mass: int,
+    x_discriminant: str,
+    y_discriminant: str,
+) -> Path:
+    """
+    Return the y-merged 2D edge JSON path for one pair.
+
+    This matches the training output naming, for example
+      2D_Disc_ggphi_vs_D_sig_yMergedMinWeightedBkg_edges_M100_combined_crossApplied.json
+    for x=D_sig, y=Disc_ggphi.
+    """
+    mass = int(mass)
+    safe_pair = f"{y_discriminant}_vs_{x_discriminant}".replace("/", "_")
+    return (
+        BDT_OUTPUT_BASE
+        / f"M{mass}"
+        / "adaptive_discriminant_rebinning"
+        / f"M{mass}"
+        / "two_dimensional_discriminants"
+        / BDT_2D_ADAPTIVE_SUBDIR
+        / f"2D_{safe_pair}_{BDT_2D_YMERGED_TOKEN}_edges_M{mass}_{BDT_ADAPTIVE_TAG}.json"
+    )
+
+
+def _bdt_extract_ymerged_2d_binning_from_json(data) -> dict:
+    """
+    Extract the irregular 2D binning from a y-merged 2D JSON.
+
+    Expected training JSON structure:
+      {
+        "x_edges": [...],
+        "y_edges_by_x_bin": [
+          {"x_bin": 1, "x_low": ..., "x_high": ..., "y_edges": [...]},
+          ...
+        ],
+        "n_cells": ...
+      }
+
+    The flattened-axis convention is cumulative in x:
+      flat_index = x_bin_offset[ix] + iy
+
+    where
+      x_bin_offset[ix] = sum(n_y_bins in previous x bins).
+    """
+    if not isinstance(data, dict):
+        raise TypeError("2D adaptive binning JSON payload is not a dictionary")
+
+    if "x_edges" not in data:
+        raise KeyError("Could not find 'x_edges' in 2D JSON payload")
+    if "y_edges_by_x_bin" not in data:
+        raise KeyError("Could not find 'y_edges_by_x_bin' in 2D JSON payload")
+
+    x_edges = [float(x) for x in data["x_edges"]]
+    if len(x_edges) < 2:
+        raise ValueError("Invalid 2D binning: x_edges has fewer than two entries")
+
+    y_entries = data["y_edges_by_x_bin"]
+    if not isinstance(y_entries, list):
+        raise TypeError("Invalid 2D binning: y_edges_by_x_bin is not a list")
+    if len(y_entries) != len(x_edges) - 1:
+        raise ValueError(
+            "Invalid 2D binning: len(y_edges_by_x_bin) does not match "
+            "len(x_edges)-1"
+        )
+
+    y_edges_by_x_bin = []
+    n_y_bins_by_x_bin = []
+    x_bin_offsets = []
+    offset = 0
+
+    for ix, entry in enumerate(y_entries):
+        if not isinstance(entry, dict):
+            raise TypeError(f"Invalid 2D binning: y entry {ix} is not a dictionary")
+
+        y_edges = [float(y) for y in entry.get("y_edges", [])]
+        if len(y_edges) < 2:
+            raise ValueError(f"Invalid 2D binning: x bin {ix + 1} has fewer than two y edges")
+
+        n_y_bins = len(y_edges) - 1
+        x_bin_offsets.append(int(offset))
+        y_edges_by_x_bin.append(y_edges)
+        n_y_bins_by_x_bin.append(int(n_y_bins))
+        offset += n_y_bins
+
+    n_cells_from_edges = int(offset)
+    n_cells_from_json = data.get("n_cells")
+
+    if n_cells_from_json is not None and int(n_cells_from_json) != n_cells_from_edges:
+        raise ValueError(
+            "Invalid 2D binning: n_cells in JSON does not match the number "
+            "computed from y_edges_by_x_bin "
+            f"({int(n_cells_from_json)} != {n_cells_from_edges})"
+        )
+
+    if n_cells_from_edges <= 0:
+        raise ValueError("Invalid y-merged 2D binning: extracted zero flattened bins")
+
+    return {
+        "x_edges": x_edges,
+        "y_edges_by_x_bin": y_edges_by_x_bin,
+        "n_y_bins_by_x_bin": n_y_bins_by_x_bin,
+        "x_bin_offsets": x_bin_offsets,
+        "n_cells": n_cells_from_edges,
+    }
+
+
+def _bdt_extract_n_flat_bins_from_ymerged_2d_json(data) -> int:
+    """
+    Extract the number of flattened bins from a y-merged 2D JSON.
+    """
+    return int(_bdt_extract_ymerged_2d_binning_from_json(data)["n_cells"])
+
+
+def _read_bdt_ymerged_2d_flattened_binning(
+    mass: int,
+    x_discriminant: str,
+    y_discriminant: str,
+):
+    """
+    Return flattened binning from the y-merged 2D JSON when available.
+
+    The returned binning is regular in the flattened coordinate:
+      (n_irregular_2d_cells, 0, n_irregular_2d_cells)
+
+    Return None when the pair is not configured for y-merging or when the JSON
+    is not available/readable, so the caller can fall back to rectangular
+    n_x_bins * n_y_bins binning.
+    """
+    if (str(x_discriminant), str(y_discriminant)) not in BDT_2D_YMERGED_PAIRS:
+        return None
+
+    path = _bdt_ymerged_2d_edges_path(mass, x_discriminant, y_discriminant)
+    if not path.is_file():
+        return None
+
+    try:
+        data = json.loads(path.read_text())
+        n_flat_bins = _bdt_extract_n_flat_bins_from_ymerged_2d_json(data)
+        return (n_flat_bins, 0, n_flat_bins)
+    except Exception:
+        return None
+
 def _bdt_flattened_2d_binning(
     mass: int,
     x_discriminant: str,
@@ -1056,17 +1293,24 @@ def _bdt_flattened_2d_binning(
     """
     Return the flattened 2D binning for a pair of discriminants.
 
-    The producer stores values in:
-      [0, n_x_bins * n_y_bins)
+    Priority:
+      1. y-merged 2D JSON for pairs with dedicated irregular 2D binning
+      2. rectangular fallback from the 1D adaptive edges
 
-    with bin centers:
-      flat_index + 0.5
+    The axis is always the flattened coordinate.  For y-merged binning, the
+    number of bins is the number of irregular 2D cells, not n_x * n_y from
+    the independent 1D binnings.
     """
-    x_source = _bdt_discriminant_binning_source(x_discriminant)
-    y_source = _bdt_discriminant_binning_source(y_discriminant)
+    ymerged_binning = _read_bdt_ymerged_2d_flattened_binning(
+        mass,
+        x_discriminant,
+        y_discriminant,
+    )
+    if ymerged_binning is not None:
+        return ymerged_binning
 
-    x_binning = _read_bdt_adaptive_binning(mass, x_source)
-    y_binning = _read_bdt_adaptive_binning(mass, y_source)
+    x_binning = _bdt_binning(mass, x_discriminant)
+    y_binning = _bdt_binning(mass, y_discriminant)
 
     n_x_bins = _bdt_n_bins_from_binning(x_binning)
     n_y_bins = _bdt_n_bins_from_binning(y_binning)
@@ -1076,158 +1320,109 @@ def _bdt_flattened_2d_binning(
     return (n_flat_bins, 0, n_flat_bins)
 
 
-def _bdt_discriminant_title(discriminant: str, discriminants: dict) -> str:
+def _bdt_discriminant_title(discriminant: str) -> str:
     """
-    Return a readable title for both standard and derived discriminants.
+    Return a readable title for standard, Disc_* and diagnostic discriminants.
     """
-    if discriminant in BDT_DERIVED_1D_DISCRIMINANTS:
-        return BDT_DERIVED_1D_DISCRIMINANTS[discriminant]["title"]
+    all_discriminants = _bdt_all_1d_discriminants()
 
-    return discriminants[discriminant]
+    if discriminant in all_discriminants:
+        return all_discriminants[discriminant]["title"]
+
+    if discriminant in BDT_DISCRIMINANT_ALIASES:
+        target = BDT_DISCRIMINANT_ALIASES[discriminant]
+        return all_discriminants[target]["title"]
+
+    return str(discriminant)
 
 
 def add_mssm_bdt_output(cfg: od.Config) -> None:
     """
-    Register the per-mass outputs of the current MSSM e-mu 4-class BDT producer.
+    Register the per-mass outputs of the current MSSM e-mu 10-feature,
+    four-class BDT producer.
+
+    Feature/training convention:
+      0 -> ggphi_phitautau
+      1 -> bbphi_phitautau
+      2 -> DY
+      3 -> TT
 
     Four-region convention:
       bdt_cat_M{mass} = argmax(P_ggphi, P_bbphi, P_DY, P_TT)
 
-    Class convention:
-      0 -> ggphi
-      1 -> bbphi
-      2 -> DY
-      3 -> TT
-
-    Region-specific fit variables:
+    Main region-specific fit variables:
       ggphi region -> bdt_D_ggphi_M{mass}
       bbphi region -> bdt_D_bbphi_M{mass}
       DY     region -> bdt_D_DY_M{mass}
       TT     region -> bdt_D_TT_M{mass}
 
-    Additional derived 1D variables:
+    Additional outputs from the new score producer:
       bdt_Disc_ggphi_M{mass}
       bdt_Disc_bbphi_M{mass}
-
-    Flattened 2D variables:
-      bdt_D_sig_vs_D_ggphi_M{mass}
-      bdt_D_sig_vs_D_bbphi_M{mass}
-      bdt_D_ggphi_vs_D_bbphi_M{mass}
-      bdt_D_sig_vs_Disc_ggphi_M{mass}
-      bdt_D_sig_vs_Disc_bbphi_M{mass}
+      bdt_D_ggphi_sig_M{mass}
+      bdt_D_bbphi_sig_M{mass}
     """
     from MSSM_H_tt.config.mass_points import read_bdt_masses
     MASS_POINTS = read_bdt_masses()
 
-    class_labels = ["ggphi", "bbphi", "dy", "tt"]
-
-    class_titles = {
-        "ggphi": r"gg$\phi$($\phi\rightarrow\tau\tau$)",
-        "bbphi": r"bb$\phi$($\phi\rightarrow\tau\tau$)",
-        "dy": "DY",
-        "tt": r"t$\bar{t}$",
-    }
-
-    discriminants = {
-        "D_sig": r"$D_{\mathrm{sig}}$",
-        "D_ggphi": r"$D_{\mathrm{gg}\phi}$",
-        "D_bbphi": r"$D_{\mathrm{bb}\phi}$",
-        "D_DY": r"$D_{\mathrm{DY}}$",
-        "D_TT": r"$D_{\mathrm{TT}}$",
-    }
-
-    # Optional plotting aliases with lower-case background names.
-    # Keep them only if downstream plotting/config code still expects D_dy/D_tt.
-    discriminant_aliases = {
-        "D_dy": "D_DY",
-        "D_tt": "D_TT",
-    }
-
     for m in MASS_POINTS:
-        # ---------------------------------------------------------------------
+        # ------------------------------------------------------------------
         # Raw four-class probabilities from the BDT producer
-        # ---------------------------------------------------------------------
-        for label in class_labels:
+        # ------------------------------------------------------------------
+        for label in BDT_CLASS_LABELS:
             cfg.add_variable(
                 name=f"bdt_raw_score_{label}_M{m}",
                 expression=f"bdt_raw_score_{label}_M{m}",
                 null_value=EMPTY_FLOAT,
-                binning=(30, 0.0, 1.0),
-                x_title=f"BDT probability for {class_titles[label]} (M={m} GeV)",
+                binning=BDT_DEFAULT_SCORE_BINNING,
+                x_title=f"BDT probability for {BDT_CLASS_TITLES[label]} (M={m} GeV)",
             )
 
-        # ---------------------------------------------------------------------
-        # Standard 1D BDT discriminants
-        # ---------------------------------------------------------------------
-        for discr_name, discr_title in discriminants.items():
+        # ------------------------------------------------------------------
+        # Standard and new 1D BDT discriminants
+        # ------------------------------------------------------------------
+        for discr_name, discr_info in _bdt_all_1d_discriminants().items():
             cfg.add_variable(
                 name=f"bdt_{discr_name}_M{m}",
                 expression=f"bdt_{discr_name}_M{m}",
                 null_value=EMPTY_FLOAT,
-                binning=_read_bdt_adaptive_binning(m, discr_name),
-                x_title=f"{discr_title} (M={m} GeV)",
+                binning=_bdt_binning(m, discr_name),
+                x_title=f"{discr_info['title']} (M={m} GeV)",
             )
 
-        # ---------------------------------------------------------------------
-        # New derived 1D BDT discriminants
-        #
-        # Produced columns:
-        #   bdt_Disc_ggphi_M{m}
-        #   bdt_Disc_bbphi_M{m}
-        # ---------------------------------------------------------------------
-        for discr_name, discr_info in BDT_DERIVED_1D_DISCRIMINANTS.items():
-            source_discr = discr_info["source"]
-            discr_title = discr_info["title"]
-
-            cfg.add_variable(
-                name=f"bdt_{discr_name}_M{m}",
-                expression=f"bdt_{discr_name}_M{m}",
-                null_value=EMPTY_FLOAT,
-                binning=_read_bdt_adaptive_binning(m, source_discr),
-                x_title=f"{discr_title} (M={m} GeV)",
-            )
-
-        # ---------------------------------------------------------------------
+        # ------------------------------------------------------------------
         # Backward-compatible aliases for older plot configs that used
         # bdt_D_dy_M{m} and bdt_D_tt_M{m}.
-        # ---------------------------------------------------------------------
-        for alias, target in discriminant_aliases.items():
+        # ------------------------------------------------------------------
+        for alias, target in BDT_DISCRIMINANT_ALIASES.items():
             cfg.add_variable(
                 name=f"bdt_{alias}_M{m}",
                 expression=f"bdt_{target}_M{m}",
                 null_value=EMPTY_FLOAT,
-                binning=_read_bdt_adaptive_binning(m, target),
-                x_title=f"{discriminants[target]} (M={m} GeV)",
+                binning=_bdt_binning(m, target),
+                x_title=f"{_bdt_discriminant_title(target)} (M={m} GeV)",
             )
 
-        # ---------------------------------------------------------------------
+        # ------------------------------------------------------------------
         # Flattened 2D BDT variables
-        #
-        # Producer output convention:
-        #   flat_index = ix * n_y_bins + iy
-        #   stored value = flat_index + 0.5
-        #
-        # Config binning:
-        #   (n_x_bins * n_y_bins, 0, n_x_bins * n_y_bins)
-        # ---------------------------------------------------------------------
+        # ------------------------------------------------------------------
         for pair_name, x_discr, y_discr in BDT_2D_FLATTENED_PAIRS:
-            x_title = _bdt_discriminant_title(x_discr, discriminants)
-            y_title = _bdt_discriminant_title(y_discr, discriminants)
-
             cfg.add_variable(
                 name=f"bdt_{pair_name}_M{m}",
                 expression=f"bdt_{pair_name}_M{m}",
                 null_value=EMPTY_FLOAT,
                 binning=_bdt_flattened_2d_binning(m, x_discr, y_discr),
                 x_title=(
-                    f"Flattened 2D bin: {x_title} vs {y_title} "
+                    "Flattened 2D bin: "
+                    f"{_bdt_discriminant_title(x_discr)} vs "
+                    f"{_bdt_discriminant_title(y_discr)} "
                     f"(M={m} GeV)"
                 ),
             )
 
-        # ---------------------------------------------------------------------
+        # ------------------------------------------------------------------
         # Four BDT regions
-        # ---------------------------------------------------------------------
+        # ------------------------------------------------------------------
         cfg.add_variable(
             name=f"bdt_cat_M{m}",
             expression=f"bdt_cat_M{m}",

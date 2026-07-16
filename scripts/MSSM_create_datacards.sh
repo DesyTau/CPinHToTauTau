@@ -11,6 +11,8 @@ Options:
   --masses M1,M2,M3         Same, comma-separated
   --mass M                  Add one mass point; can be repeated
   --all-masses              Run the full default mass list
+  --poll-interval T         Polling interval for HTCondor tasks, e.g. 30m, 1h.
+                             Default: $POLL_INTERVAL if set, otherwise 1h.
   -h, --help                Show this help
 
 This script creates four datacards per mass point:
@@ -42,7 +44,9 @@ Examples:
 
   ./MSSM_create_datacards.sh 23_emu --mass 100 --mass 200 --mass 300
 
-  ./MSSM_create_datacards.sh 23_emu --masses "100 200" --workers 10
+  ./MSSM_create_datacards.sh 23_emu --masses "100 200" --poll-interval 1h --workers 1
+
+  POLL_INTERVAL=45m ./MSSM_create_datacards.sh 23_emu --mass 60 --workers 1
 EOF
 }
 
@@ -61,8 +65,36 @@ shift
 
 source ./common_run3_MSSM.sh
 set_common_vars "$config_arg"
+# ----------------------------------------------------------------------
+# Isolate simultaneous submissions from different lxplus machines.
+# This avoids sharing transient LAW job files and HTCondor user-log
+# directories between independent script invocations.
+# ----------------------------------------------------------------------
+run_id="${RUN_ID:-${config_arg}_$(hostname -s)_$(date +%Y%m%d_%H%M%S)_$$}"
+run_id="$(echo "$run_id" | sed 's/[^A-Za-z0-9_.-]/_/g')"
 
+echo "[info] Run id: $run_id"
+
+# Isolate LAW/HTCondor submission metadata if CF_JOB_BASE is used by law.cfg.
+if [[ -n "${CF_JOB_BASE:-}" ]]; then
+    export CF_JOB_BASE="${CF_JOB_BASE%/}/runs/${run_id}"
+    mkdir -p "$CF_JOB_BASE"
+    echo "[info] CF_JOB_BASE: $CF_JOB_BASE"
+fi
+
+# Isolate the HTCondor event-log layout used by the condor_history -userlog wrapper.
+export CF_HTCONDOR_USERLOG_RUN_ID="$run_id"
+export CF_HTCONDOR_CLEAN_SUCCESS_LOGS="${CF_HTCONDOR_CLEAN_SUCCESS_LOGS:-1}"
+
+if [[ -n "${CF_HTCONDOR_USERLOG_DIR:-}" ]]; then
+    mkdir -p "$CF_HTCONDOR_USERLOG_DIR"
+    echo "[info] CF_HTCONDOR_USERLOG_DIR: $CF_HTCONDOR_USERLOG_DIR"
+fi
 version=desy_dev
+
+# Sparse polling by default.
+# This preserves the law dependency chain while strongly reducing status-query frequency.
+poll_interval="${POLL_INTERVAL:-5m}"
 
 default_masses=(
     60 65 70 75 80 85 90 95
@@ -73,6 +105,20 @@ default_masses=(
     1200 1400 1600 1800
     2000 2300
     2600 2900 3200 3500
+)
+
+# All Columnflow tasks for which the workflow and polling interval should be forwarded.
+remote_tasks=(
+    cf.CalibrateEvents
+    cf.SelectEvents
+    cf.ReduceEvents
+    cf.MergeReducedEvents
+    cf.MergeSelectionStats
+    cf.ProvideReducedEvents
+    cf.ProduceColumns
+    cf.MergeHistograms
+    cf.CreateHistograms
+    cf.MergeShiftedHistograms
 )
 
 masses=()
@@ -119,6 +165,15 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
 
+        --poll-interval)
+            if [[ $# -lt 2 ]]; then
+                echo "[error] Missing argument after $1" >&2
+                exit 1
+            fi
+            poll_interval="$2"
+            shift 2
+            ;;
+
         --)
             shift
             extra_args+=("$@")
@@ -139,6 +194,7 @@ fi
 echo "[info] Config: $config"
 echo "[info] Workflow: $workflow"
 echo "[info] Version: $version"
+echo "[info] Poll interval: $poll_interval"
 echo "[info] Masses to run: ${masses[*]}"
 
 for m in "${masses[@]}"; do
@@ -158,48 +214,32 @@ for m in "${masses[@]}"; do
         args=(
             --config "$config"
 
-            --cf.CalibrateEvents-version "$version"
-            --cf.CalibrateEvents-workflow "$workflow"
-
-            --cf.SelectEvents-version "$version"
-            --cf.SelectEvents-workflow "$workflow"
-
-            --cf.ReduceEvents-version "$version"
-            --cf.ReduceEvents-workflow "$workflow"
-
-            --cf.MergeReducedEvents-version "$version"
-            --cf.MergeReducedEvents-workflow "$workflow"
-
-            --cf.MergeSelectionStats-version "$version"
-            --cf.MergeSelectionStats-workflow "$workflow"
-
-            --cf.ProvideReducedEvents-version "$version"
-            --cf.ProvideReducedEvents-workflow "$workflow"
-
-            --cf.ProduceColumns-version "$version"
-            --cf.ProduceColumns-workflow "$workflow"
-
-            --cf.MergeHistograms-version "$version"
-            --cf.MergeHistograms-workflow "$workflow"
-
-            --cf.CreateHistograms-version "$version"
-            --cf.CreateHistograms-workflow "$workflow"
-
-            --cf.MergeShiftedHistograms-version "$version"
-            --cf.MergeShiftedHistograms-workflow "$workflow"
-
             --pilot True
             --version "$version"
 
             --inference-model "$inference_model"
             --hist-hooks qcd
-
-            "${extra_args[@]}"
         )
+
+        for task in "${remote_tasks[@]}"; do
+            args+=(
+                "--${task}-version" "$version"
+                "--${task}-workflow" "$workflow"
+                "--${task}-poll-interval" "$poll_interval"
+            )
+        done
+
+        args+=("${extra_args[@]}")
 
         echo
         echo "[info] Running inference model: $inference_model"
+        echo "[info] Poll interval: $poll_interval"
         echo law run cf.CreateDatacards "${args[@]}"
         law run cf.CreateDatacards "${args[@]}"
     done
 done
+
+# RUN_ID=22_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 22_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler
+# RUN_ID=22EE_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 22EE_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler
+# RUN_ID=23_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 23_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler
+# RUN_ID=23BPix_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 23BPix_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler

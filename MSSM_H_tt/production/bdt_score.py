@@ -1,8 +1,8 @@
 # coding: utf-8
 
 """
-Producer for the MSSM H->tautau e-mu 4-class BDT using the current ggphi/bbphi
-training.
+Producer for the MSSM H->tautau e-mu 4-class BDT using the 10-feature
+current ggphi/bbphi training.
 
 Training classes / analysis regions:
   0: ggphi_phitautau -> ggphi
@@ -13,12 +13,20 @@ Training classes / analysis regions:
 For each mass point, the producer writes:
   - raw four-class probabilities: bdt_raw_score_{ggphi,bbphi,dy,tt}_M{mass}
   - four-class argmax category: bdt_cat_M{mass}
-  - region discriminants:
+  - probability discriminants:
       bdt_D_sig_M{mass}
       bdt_D_ggphi_M{mass}
       bdt_D_bbphi_M{mass}
+      bdt_Disc_ggphi_M{mass}
+      bdt_Disc_bbphi_M{mass}
       bdt_D_DY_M{mass}
       bdt_D_TT_M{mass}
+      bdt_D_bbphi_sig_M{mass}
+      bdt_D_ggphi_sig_M{mass}
+
+The feature list and order must match the BDT training script:
+  n_bjets, delta_eta_jj, mt_tot, fastMTT, pt_lead_b_jet,
+  eta_lead_b_jet, eta_sublead_jet, pt_sublead_jet, m_vis, D_zeta
 
 The four fit regions use:
   bdt_cat_M{mass} = argmax(P_ggphi, P_bbphi, P_DY, P_TT)
@@ -56,14 +64,16 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
 from MSSM_H_tt.config.mass_points import read_bdt_masses
 MASS_POINTS = read_bdt_masses()
 
-# Must match OUTPUT_BASE in the BDT training script, i.e. the directory where
-# the trained JSON models and fixed-cut penalty summaries are stored.
-#
-# Current training script uses raw jet-count features by default. If your jobs
-# were intentionally written to another output directory, change only this path.
+# Keep this synchronized with the training script.
+CLIP_JET_COUNT_FEATURES = True
+N_BJETS_CLIP_MIN = 0.0
+N_BJETS_CLIP_MAX = 2.0
+JET_COUNT_MODE_TAG = "clippedJetCounts" if CLIP_JET_COUNT_FEATURES else "rawJetCounts"
+
+# Must match OUTPUT_BASE in the BDT training script.
 BDT_EOS_BASE = Path(
     "/eos/project/d/desytau/public/jmalvaso/"
-    "bdt_4_classes_phi_no_DY_tail_focus_normWeightTraining_clippedJetCounts"
+    f"bdt_3_classes_10_features_{JET_COUNT_MODE_TAG}"
 )
 
 
@@ -139,8 +149,10 @@ def _read_best_dsig_penalties(mass: int) -> tuple[float, float]:
             )
 
     logger.warning(
-        "No best-D_sig penalty summary found for M=%s. Falling back to w_DY=w_TT=1.",
+        "No best-D_sig penalty summary found for M=%s in %s. "
+        "Falling back to w_DY=w_TT=1.",
         mass,
+        BDT_EOS_BASE,
     )
     return 1.0, 1.0
 
@@ -152,52 +164,31 @@ BDT_LABELS = [
     "tt",     # 3: TT
 ]
 
-BDT_PNETB_TOP_K = 8
-
-
-def _jet_raw_pnetb_feature_names() -> list[str]:
-    return [f"jet_raw_PNetB_jet{i}" for i in range(1, BDT_PNETB_TOP_K + 1)]
-
-
-# Feature names and order must match the training script. Do not add event or
-# event_weight here; they are not BDT inputs.
+# Feature names and order must match the training script. Do not add event,
+# event_weight or event_weight_train here; they are not BDT inputs.
 BDT_FEATURES = [
-    "mt_tot",
-    "mt_jets",
-    "mt_bjets",
-    "mjj",
-    "mb_jb_jb",
-    "n_jets",
     "n_bjets",
-    "fastMTT",
     "delta_eta_jj",
-    "delta_eta_bb",
-    "pt_lead_jet",
-    "pt_sublead_jet",
+    "mt_tot",
+    "fastMTT",
     "pt_lead_b_jet",
-    "eta_lead_jet",
-    "eta_sublead_jet",
     "eta_lead_b_jet",
-    *_jet_raw_pnetb_feature_names(),
-    "D_zeta",
-    "pt_e",
-    "pt_mu",
-    "eta_e",
-    "eta_mu",
-    "met_pt",
-    "dR_emu",
+    "eta_sublead_jet",
+    "pt_sublead_jet",
     "m_vis",
-    "mt_e",
-    "mt_mu",
-    "mt_emu",
+    "D_zeta",
 ]
 
 BDT_DISCRIMINANTS = [
     "D_sig",
     "D_ggphi",
     "D_bbphi",
+    "Disc_ggphi",
+    "Disc_bbphi",
     "D_DY",
     "D_TT",
+    "D_bbphi_sig",
+    "D_ggphi_sig",
 ]
 
 
@@ -218,7 +209,9 @@ def _get_nested(arr, path: str):
     for part in path.split("."):
         fields = _ak_fields(out)
         if part not in fields:
-            raise KeyError(f"missing field '{part}' while resolving '{path}', available={fields}")
+            raise KeyError(
+                f"missing field '{part}' while resolving '{path}', available={fields}"
+            )
         out = out[part]
     return out
 
@@ -238,82 +231,11 @@ def _flat_first_existing(events: ak.Array, paths: list[str], axis=-1):
     raise RuntimeError(f"Could not build feature from any of {paths}") from last_exc
 
 
-def _pt_or_rho(obj):
-    """Return transverse momentum from common vector layouts."""
-    for name in ("pt", "rho"):
-        try:
-            return _get_nested(obj, name)
-        except Exception:
-            pass
-
-    for x_name, y_name in (("px", "py"), ("x", "y"), ("fX", "fY")):
-        try:
-            x = _get_nested(obj, x_name)
-            y = _get_nested(obj, y_name)
-            return np.sqrt(x * x + y * y)
-        except Exception:
-            pass
-
-    raise RuntimeError(f"Could not extract transverse momentum from fields {_ak_fields(obj)}")
-
-
-def _flat_pt_or_rho(obj, axis=-1):
-    return _flat_float(_pt_or_rho(obj), axis=axis)
-
-
-def _build_jet_raw_pnetb_slots(events: ak.Array) -> dict[str, np.ndarray]:
-    """
-    Build fixed jet_raw_PNetB_jet1...jet8 columns from the event-level jagged
-    per-jet b-tag array.
-
-    Preferred source order:
-      1. Jet.btagPNetB
-      2. top-level jet_raw_PNetB
-    """
-    sources = ["Jet.btagPNetB", "jet_raw_PNetB"]
-    x = None
-    chosen = None
-
-    for source in sources:
-        try:
-            x = _get_nested(events, source)
-            chosen = source
-            break
-        except Exception:
-            pass
-
-    if x is None:
-        raise RuntimeError(
-            "Could not find per-jet PNetB input. Tried: " + ", ".join(sources)
-        )
-
-    logger.debug("Using %s as jet_raw_PNetB input", chosen)
-
-    rows = ak.to_list(x)
-    n_events = len(rows)
-
-    def scalar(value):
-        if value is None:
-            return np.nan
-        while isinstance(value, (list, tuple)):
-            if len(value) == 0:
-                return np.nan
-            value = value[0]
-        try:
-            return float(value)
-        except Exception:
-            return np.nan
-
-    out = {}
-    for i in range(BDT_PNETB_TOP_K):
-        values = np.full(n_events, np.nan, dtype=np.float32)
-        for iev, row in enumerate(rows):
-            if row is None or len(row) <= i:
-                continue
-            values[iev] = scalar(row[i])
-        out[f"jet_raw_PNetB_jet{i + 1}"] = values
-
-    return out
+def _clip_if_enabled_n_bjets(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float32)
+    if not CLIP_JET_COUNT_FEATURES:
+        return values
+    return np.clip(values, N_BJETS_CLIP_MIN, N_BJETS_CLIP_MAX).astype(np.float32)
 
 
 # -------------------------------------------------------------------------
@@ -322,56 +244,25 @@ def _build_jet_raw_pnetb_slots(events: ak.Array) -> dict[str, np.ndarray]:
 
 def _build_bdt_feature_frame(events: ak.Array, channel: str):
     """
-    Build the exact feature frame used by train_bdt_4class_htcondor.py.
+    Build the exact feature frame used by the 10-feature BDT training script.
     """
     hcand = events[f"hcand_{channel}"]
 
+    n_bjets = _flat_first_existing(events, ["n_bjets", "N_b_jets"])
+    n_bjets = _clip_if_enabled_n_bjets(n_bjets)
+
     features_dict = {
-        "mt_tot": _flat_float(hcand.mt_tot),
-        "mt_jets": _flat_first_existing(events, ["mt_jets"]),
-        "mt_bjets": _flat_first_existing(events, ["mt_bjets"]),
-        "mjj": _flat_first_existing(events, ["mjj", "dijet.mass"]),
-        "mb_jb_jb": _flat_first_existing(events, ["mb_jb_jb", "di_b_jet.mass"]),
-
-        # Current training uses raw, unclipped jet-count features.
-        "n_jets": _flat_first_existing(events, ["n_jets"]),
-        "n_bjets": _flat_first_existing(events, ["n_bjets", "N_b_jets"]),
-
-        "fastMTT": _flat_float(hcand.fastMTT.mass, axis=1),
+        "n_bjets": n_bjets,
         "delta_eta_jj": _flat_first_existing(events, ["delta_eta_jj", "dijet.deltaeta"]),
-        "delta_eta_bb": _flat_first_existing(events, ["delta_eta_bb", "di_b_jet.deltaeta"]),
-        "pt_lead_jet": _flat_first_existing(events, ["pt_lead_jet", "lead_jet.pt"]),
-        "pt_sublead_jet": _flat_first_existing(events, ["pt_sublead_jet", "sublead_jet.pt"]),
+        "mt_tot": _flat_first_existing(events, ["mt_tot", f"hcand_{channel}.mt_tot"]),
+        "fastMTT": _flat_first_existing(events, ["fastMTT", f"hcand_{channel}.fastMTT.mass"], axis=1),
         "pt_lead_b_jet": _flat_first_existing(events, ["pt_lead_b_jet", "lead_b_jet.pt"]),
-        "eta_lead_jet": _flat_first_existing(events, ["eta_lead_jet", "lead_jet.eta"]),
-        "eta_sublead_jet": _flat_first_existing(events, ["eta_sublead_jet", "sublead_jet.eta"]),
         "eta_lead_b_jet": _flat_first_existing(events, ["eta_lead_b_jet", "lead_b_jet.eta"]),
-
+        "eta_sublead_jet": _flat_first_existing(events, ["eta_sublead_jet", "sublead_jet.eta"]),
+        "pt_sublead_jet": _flat_first_existing(events, ["pt_sublead_jet", "sublead_jet.pt"]),
+        "m_vis": _flat_first_existing(events, ["m_vis", f"hcand_{channel}.mass"]),
         "D_zeta": _flat_first_existing(events, ["D_zeta"]),
-        "pt_e": _flat_float(hcand.lep0.pt, axis=1),
-        "pt_mu": _flat_float(hcand.lep1.pt, axis=1),
-        "eta_e": _flat_float(hcand.lep0.eta, axis=1),
-        "eta_mu": _flat_float(hcand.lep1.eta, axis=1),
-
-        "met_pt": _flat_first_existing(
-            events,
-            [
-                "met_pt",
-                "PuppiMET.pt",
-                "PuppiMET.rho",
-                "RecoilCorrMET.pt",
-                "RecoilCorrMET.rho",
-            ],
-        ),
-
-        "dR_emu": _flat_float(hcand.delta_r),
-        "m_vis": _flat_float(hcand.mass),
-        "mt_e": _flat_float(hcand.mt_e),
-        "mt_mu": _flat_float(hcand.mt_mu),
-        "mt_emu": _flat_float(hcand.mt_emu),
     }
-
-    features_dict.update(_build_jet_raw_pnetb_slots(events))
 
     features = pd.DataFrame.from_dict(features_dict)
     features = features.replace([np.inf, -np.inf], np.nan)
@@ -400,22 +291,18 @@ def _eval_model_or_empty(evaluator, key, features, n_classes):
 # -------------------------------------------------------------------------
 @producer(
     uses={
-        "event",
-        "hcand_*.*",
-        "hcand_*.fastMTT.*",
-        "lead_jet.pt", "lead_jet.eta", "lead_jet.phi",
-        "sublead_jet.pt", "sublead_jet.eta", "sublead_jet.phi",
-        "lead_b_jet.pt", "lead_b_jet.eta", "lead_b_jet.phi",
-        "sublead_b_jet.pt", "sublead_b_jet.phi",
-        "di_b_jet.mass", "di_b_jet.deltaeta",
-        "dijet.mass", "dijet.deltaeta",
-        "mt_jets", "mt_bjets",
-        "n_jets", "N_b_jets",
-        "D_zeta",
-        "PuppiMET.*",
-        "RecoilCorrMET.*",
-        "Jet.btagPNetB",
-    },
+            "event",
+            "N_b_jets",
+            "dijet.deltaeta",
+            "hcand_*.mt_tot",
+            "hcand_*.fastMTT.mass",
+            "lead_b_jet.pt",
+            "lead_b_jet.eta",
+            "sublead_jet.pt",
+            "sublead_jet.eta",
+            "hcand_*.mass",
+            "D_zeta",
+        },
     produces=(
         {
             f"bdt_raw_score_{lbl}_M{m}"
@@ -437,7 +324,7 @@ def mssm_bdt_score(
     **kwargs,
 ) -> ak.Array:
     """
-    Return per-mass BDT scores, region discriminants and four-class categories.
+    Return per-mass BDT scores, probability discriminants and four-class categories.
     """
     channel = self.config_inst.channels.names()[0]
     event_n = flat_np_view(events.event)
@@ -493,13 +380,20 @@ def mssm_bdt_score(
             w_DY = np.float32(dy_penalty)
             w_TT = np.float32(tt_penalty)
 
-            common_signal_den = p_ggphi + p_bbphi + w_DY * p_DY + w_TT * p_TT + eps
+            common_signal_den = p_sig + w_DY * p_DY + w_TT * p_TT + eps
+            D_ggphi = p_ggphi / common_signal_den
+            D_bbphi = p_bbphi / common_signal_den
+
             discriminants = {
                 "D_sig": p_sig / common_signal_den,
-                "D_ggphi": p_ggphi / common_signal_den,
-                "D_bbphi": p_bbphi / common_signal_den,
+                "D_ggphi": D_ggphi,
+                "D_bbphi": D_bbphi,
+                "Disc_ggphi": D_ggphi / (D_ggphi + D_bbphi + eps),
+                "Disc_bbphi": D_bbphi / (D_ggphi + D_bbphi + eps),
                 "D_DY": p_DY / (p_sig + p_DY + w_TT * p_TT + eps),
                 "D_TT": p_TT / (p_sig + w_DY * p_DY + p_TT + eps),
+                "D_bbphi_sig": p_bbphi / (p_bbphi + p_ggphi + eps),
+                "D_ggphi_sig": p_ggphi / (p_ggphi + p_bbphi + eps),
             }
 
             for idx, label in enumerate(BDT_LABELS):

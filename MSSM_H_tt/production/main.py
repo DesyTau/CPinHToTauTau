@@ -35,7 +35,7 @@ from MSSM_H_tt.production.fastMTT import fastMTT
 from MSSM_H_tt.production.pt_H import pt_H
 from MSSM_H_tt.production.D_zeta import D_zeta
 from MSSM_H_tt.production.stitching_weights import stitching_weight
-from MSSM_H_tt.production.unclustered_met import unclustered_met
+from MSSM_H_tt.production.unclustered_met import unclustered_met, add_unclustered_to_recoilcorrmet
 from MSSM_H_tt.production.theor_weight import theor_unc
 from MSSM_H_tt.production.bdt_2d_bins import bdt_2d_variables
 np = maybe_import("numpy")
@@ -153,6 +153,7 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         theor_unc,
         "PuppiMET.pt", "PuppiMET.phi", "PuppiMET.covXX", "PuppiMET.covXY", "PuppiMET.covYY",
         bdt_2d_variables,
+        add_unclustered_to_recoilcorrmet,
     },
     produces={
         "event",
@@ -196,8 +197,14 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         stitching_weight,
         unclustered_met,
         theor_unc,
-        "RecoilCorrMET.pt", "RecoilCorrMET.phi", "RecoilCorrMET.covXX", "RecoilCorrMET.covXY", "RecoilCorrMET.covYY",
+        "RecoilCorrMET.pt", "RecoilCorrMET.phi",
+        "RecoilCorrMET.covXX", "RecoilCorrMET.covXY", "RecoilCorrMET.covYY",
+        "RecoilCorrMET.pt_unclustered_up",
+        "RecoilCorrMET.phi_unclustered_up",
+        "RecoilCorrMET.pt_unclustered_down",
+        "RecoilCorrMET.phi_unclustered_down",
         bdt_2d_variables,
+        add_unclustered_to_recoilcorrmet,
         },
     produce_weights=True,
 )
@@ -228,6 +235,9 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
             f"for {dataset_name} with order={met_recoil_datasets[dataset_name]}..."
         )
         events = self[recoil_corrected_met](events, **kwargs)
+        # Add unclustered MET variations on top of recoil-corrected MET
+        print("Add unclustered MET variations on top of recoil-corrected MET")
+        events = self[add_unclustered_to_recoilcorrmet](events, **kwargs)
 
     else:
         if self.dataset_inst.is_mc:
@@ -251,6 +261,22 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     #
     # These producers should read RecoilCorrMET, not PuppiMET.
     # ------------------------------------------------------------
+
+    print(
+    "PuppiMET unclustered up mean delta:",
+    ak.mean(events.PuppiMET.pt_unclustered_up - events.PuppiMET.pt),
+    )
+
+    print(
+        "RecoilCorrMET unclustered up mean delta:",
+        ak.mean(events.RecoilCorrMET.pt_unclustered_up - events.RecoilCorrMET.pt),
+    )
+
+    print(
+        "RecoilCorrMET unclustered down mean delta:",
+        ak.mean(events.RecoilCorrMET.pt_unclustered_down - events.RecoilCorrMET.pt),
+    )
+
     print("Producing mT distributions...")
     events = self[hcand_mt](events, **kwargs)
   
