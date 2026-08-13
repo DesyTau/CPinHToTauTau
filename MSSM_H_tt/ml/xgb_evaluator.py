@@ -4,7 +4,7 @@ import os
 import time
 import pathlib
 from multiprocessing import Process, Pipe
-from multiprocessing.connection import Connection
+from multiprocessing.connection import Connection, wait
 from dataclasses import dataclass
 from columnflow.types import Any
 
@@ -44,8 +44,6 @@ class XGBEvaluator:
 
         self._models: dict[str, XGBEvaluator.Model] = {}
         self._p: Process | None = None
-
-        self.delay = 0.2
         self.silent = False
 
     def __enter__(self):
@@ -94,7 +92,7 @@ class XGBEvaluator:
         self._p = Process(
             target=_xgb_evaluate,
             args=(config,),
-            kwargs={"delay": self.delay, "silent": self.silent},
+            kwargs={"silent": self.silent},
         )
         self._p.start()
 
@@ -139,7 +137,6 @@ def _xgb_evaluate(
     config: list[dict[str, Any]],
     /,
     *,
-    delay = 1,
     silent: bool = False,
 ) -> None:
     _print = (lambda *args, **kwargs: None) if silent else print
@@ -174,6 +171,7 @@ def _xgb_evaluate(
             _print(f"loading model '{self.name}'{sig_msg} from {self.path} ...")
             self.model = xgb.XGBClassifier()
             self.model.load_model(self.path)
+            self.model.set_params(n_jobs=1)
             _print("done")
 
         def evaluate(self, *args, **kwargs) -> np.ndarray:
@@ -187,45 +185,48 @@ def _xgb_evaluate(
     # convert to model objects
     models = [Model.new(item) for item in config]
 
-    # load model objects
-    for model in models:
-        model.load()
+    active_models = {
+        model.pipe: model
+        for model in models
+    }
 
-    # helper for gracefully shutting down
     def shutdown() -> None:
-        for model in models:
+        for model in list(active_models.values()):
             model.clear()
-        models.clear()
+        active_models.clear()
 
-    # start loop listening for data
-    while models:
-        remove_models: list[int] = []
-        for i, model in enumerate(models):
-            # skip if there is no data to process
-            if not model.pipe.poll():
+    while active_models:
+        ready_pipes = wait(list(active_models.keys()))
+
+        for pipe in ready_pipes:
+            model = active_models[pipe]
+
+            try:
+                data = pipe.recv()
+            except EOFError:
+                model.clear()
+                del active_models[pipe]
                 continue
 
-            # get data and process
-            data = model.pipe.recv()
             if isinstance(data, tuple) and len(data) == 2:
-                # evaluate
                 try:
                     args, kwargs = data
                     result = model.evaluate(*args, **kwargs)
-                except:
+                except Exception:
                     shutdown()
                     raise
-                # send back result
-                model.pipe.send(result)
+
+                pipe.send(result)
 
             elif data == STOP_SIGNAL:
-                # remove model
                 model.clear()
-                remove_models.append(i)
+                del active_models[pipe]
 
             else:
-                raise ValueError(f"unexpected data type {type(data)}")
+                shutdown()
+                raise ValueError(
+                    f"unexpected data type {type(data)}"
+                )
 
         # reduce models and sleep
         models = [model for i, model in enumerate(models) if i not in remove_models]
-        time.sleep(delay)

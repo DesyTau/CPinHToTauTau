@@ -339,52 +339,52 @@ def mssm_bdt_score(
     n_classes = len(BDT_LABELS)
     eps = np.float32(1e-12)
 
-    with self.evaluator:
-        for mass in MASS_POINTS:
-            key_even = f"bdt_even_M{mass}"
-            key_odd = f"bdt_odd_M{mass}"
+
+    for mass in self.mass_points:
+        key_even = f"bdt_even_M{mass}"
+        key_odd = f"bdt_odd_M{mass}"
 
             # Cross-apply the parity models, matching the training script:
             #   - even model was trained on even events and is applied to odd events
             #   - odd model was trained on odd events and is applied to even events
-            res_even_model_on_odd = _eval_model_or_empty(
+        res_even_model_on_odd = _eval_model_or_empty(
                 self.evaluator,
                 key_even,
                 features_odd,
                 n_classes,
             )
-            res_odd_model_on_even = _eval_model_or_empty(
+        res_odd_model_on_even = _eval_model_or_empty(
                 self.evaluator,
                 key_odd,
                 features_even,
                 n_classes,
             )
 
-            output = np.zeros((len(event_n), n_classes), dtype=np.float32)
-            output[mask_even, :] = res_odd_model_on_even
-            output[~mask_even, :] = res_even_model_on_odd
+        output = np.zeros((len(event_n), n_classes), dtype=np.float32)
+        output[mask_even, :] = res_odd_model_on_even
+        output[~mask_even, :] = res_even_model_on_odd
 
-            p_ggphi = output[:, 0]
-            p_bbphi = output[:, 1]
-            p_DY = output[:, 2]
-            p_TT = output[:, 3]
-            p_sig = p_ggphi + p_bbphi
+        p_ggphi = output[:, 0]
+        p_bbphi = output[:, 1]
+        p_DY = output[:, 2]
+        p_TT = output[:, 3]
+        p_sig = p_ggphi + p_bbphi
 
-            # Four analysis regions: argmax(P_ggphi, P_bbphi, P_DY, P_TT).
-            bdt_cat = np.argmax(output, axis=1).astype(np.int32)
+        # Four analysis regions: argmax(P_ggphi, P_bbphi, P_DY, P_TT).
+        bdt_cat = np.argmax(output, axis=1).astype(np.int32)
 
-            dy_penalty, tt_penalty = self.bdt_best_dsig_penalties.get(
+        dy_penalty, tt_penalty = self.bdt_best_dsig_penalties.get(
                 int(mass),
                 (1.0, 1.0),
             )
-            w_DY = np.float32(dy_penalty)
-            w_TT = np.float32(tt_penalty)
+        w_DY = np.float32(dy_penalty)
+        w_TT = np.float32(tt_penalty)
 
-            common_signal_den = p_sig + w_DY * p_DY + w_TT * p_TT + eps
-            D_ggphi = p_ggphi / common_signal_den
-            D_bbphi = p_bbphi / common_signal_den
+        common_signal_den = p_sig + w_DY * p_DY + w_TT * p_TT + eps
+        D_ggphi = p_ggphi / common_signal_den
+        D_bbphi = p_bbphi / common_signal_den
 
-            discriminants = {
+        discriminants = {
                 "D_sig": p_sig / common_signal_den,
                 "D_ggphi": D_ggphi,
                 "D_bbphi": D_bbphi,
@@ -396,21 +396,21 @@ def mssm_bdt_score(
                 "D_ggphi_sig": p_ggphi / (p_ggphi + p_bbphi + eps),
             }
 
-            for idx, label in enumerate(BDT_LABELS):
+        for idx, label in enumerate(BDT_LABELS):
                 events = set_ak_column_f32(
                     events,
                     f"bdt_raw_score_{label}_M{mass}",
                     np.ascontiguousarray(output[:, idx]),
                 )
 
-            for name, values in discriminants.items():
+        for name, values in discriminants.items():
                 events = set_ak_column_f32(
                     events,
                     f"bdt_{name}_M{mass}",
                     np.ascontiguousarray(values.astype(np.float32)),
                 )
 
-            events = set_ak_column_i32(
+        events = set_ak_column_i32(
                 events,
                 f"bdt_cat_M{mass}",
                 np.ascontiguousarray(bdt_cat),
@@ -442,19 +442,21 @@ def mssm_bdt_score_setup(
     reader_targets: law.util.InsertableDict,
     **kwargs,
 ) -> None:
-    """
-    Load one XGBoost model pair for each mass point and the best D_sig penalty
-    pair used for the region discriminants.
-    """
     from MSSM_H_tt.ml.xgb_evaluator import XGBEvaluator
 
     self.evaluator = XGBEvaluator()
     self.bdt_best_dsig_penalties = {}
 
-    for mass in MASS_POINTS:
+    for mass in self.mass_points:
         self.evaluator.add_model(f"bdt_even_M{mass}", _even_path(mass))
         self.evaluator.add_model(f"bdt_odd_M{mass}", _odd_path(mass))
-        self.bdt_best_dsig_penalties[int(mass)] = _read_best_dsig_penalties(int(mass))
+
+        self.bdt_best_dsig_penalties[int(mass)] = (
+            _read_best_dsig_penalties(int(mass))
+        )
+
+    # IMPORTANT: load models only once for the complete ProduceColumns task
+    self.evaluator.start()
 
 
 @mssm_bdt_score.teardown
