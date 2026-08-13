@@ -35,7 +35,11 @@ from columnflow.production import Producer, producer
 from columnflow.columnar_util import set_ak_column
 from columnflow.util import maybe_import
 
-from MSSM_H_tt.config.mass_points import read_bdt_masses
+from MSSM_H_tt.config.mass_points import (
+    read_bdt_masses,
+    get_bdt_mass_blocks,
+    get_bdt_mass_block_tag,
+)
 
 
 ak = maybe_import("awkward")
@@ -92,15 +96,17 @@ BDT_INPUTS = (
 
 
 # Flattened 2D variables to produce.
-BDT_2D_PAIRS = (
-    ("D_sig_vs_D_ggphi", "D_sig", "D_ggphi"),
-    ("D_sig_vs_D_bbphi", "D_sig", "D_bbphi"),
-    ("D_ggphi_vs_D_bbphi", "D_ggphi", "D_bbphi"),
-
-    # These two use the irregular y-merged 2D binning JSONs from the training
-    # post-processing.
-    ("D_sig_vs_Disc_ggphi", "D_sig", "Disc_ggphi"),
-    ("D_sig_vs_Disc_bbphi", "D_sig", "Disc_bbphi"),
+BDT_CARD_2D_PAIRS = (
+    (
+        "D_sig_vs_Disc_ggphi",
+        "D_sig",
+        "Disc_ggphi",
+    ),
+    (
+        "D_sig_vs_Disc_bbphi",
+        "D_sig",
+        "Disc_bbphi",
+    ),
 )
 
 
@@ -113,7 +119,33 @@ BDT_YMERGED_2D_PAIRS = {
 # -------------------------------------------------------------------------
 # Naming helpers
 # -------------------------------------------------------------------------
+def _bdt_2d_input_columns(
+    masses,
+    pairs,
+):
+    discriminants = {
+        disc
+        for _, x_disc, y_disc in pairs
+        for disc in (x_disc, y_disc)
+    }
 
+    return {
+        _column_name(discriminant, mass)
+        for mass in masses
+        for discriminant in discriminants
+    }
+
+
+def _bdt_2d_output_columns(
+    masses,
+    pairs,
+):
+    return {
+        _pair_column_name(pair_name, mass)
+        for mass in masses
+        for pair_name, _, _ in pairs
+    }
+    
 def _column_name(discriminant: str, mass: Mass) -> str:
     return f"bdt_{discriminant}_M{mass}"
 
@@ -477,20 +509,23 @@ def _flatten_2d_ymerged(x, y, ymerged_binning: dict[str, object]):
 # -------------------------------------------------------------------------
 
 @producer(
-    uses={
-        _column_name(discriminant, mass)
-        for mass in MASS_POINTS
-        for discriminant in BDT_INPUTS
-    },
-    produces={
-        _pair_column_name(pair_name, mass)
-        for mass in MASS_POINTS
-        for pair_name, _, _ in BDT_2D_PAIRS
-    },
+    uses=_bdt_2d_input_columns(
+        MASS_POINTS,
+        BDT_2D_PAIRS,
+    ),
+    produces=_bdt_2d_output_columns(
+        MASS_POINTS,
+        BDT_2D_PAIRS,
+    ),
+    mass_points=MASS_POINTS,
+    bdt_2d_pairs=BDT_2D_PAIRS,
 )
-def bdt_2d_variables(self: Producer, events, **kwargs):
-    for mass in MASS_POINTS:
-        for pair_name, x_disc, y_disc in BDT_2D_PAIRS:
+def bdt_2d_variables(
+    self: Producer,
+    events,
+    **kwargs,):
+    for mass in self.mass_points:
+        for pair_name, x_disc, y_disc in self.bdt_2d_pairs:
             out_col = _pair_column_name(pair_name, mass)
 
             x_values = _get_discriminant_values(events, x_disc, mass)
@@ -527,3 +562,33 @@ def bdt_2d_variables(self: Producer, events, **kwargs):
             )
 
     return events
+
+BDT_2D_CARD_BLOCK_PRODUCERS = {}
+
+
+for block in get_bdt_mass_blocks():
+    block = tuple(block)
+    tag = get_bdt_mass_block_tag(block)
+
+    cls_name = f"bdt_2d_card_{tag}"
+
+    producer_cls = bdt_2d_variables.derive(
+        cls_name,
+        cls_dict={
+            "mass_points": block,
+            "bdt_2d_pairs": BDT_CARD_2D_PAIRS,
+            "uses": _bdt_2d_input_columns(
+                block,
+                BDT_CARD_2D_PAIRS,
+            ),
+            "produces": _bdt_2d_output_columns(
+                block,
+                BDT_CARD_2D_PAIRS,
+            ),
+        },
+    )
+
+    globals()[cls_name] = producer_cls
+    BDT_2D_CARD_BLOCK_PRODUCERS[block] = (
+        producer_cls
+    )
