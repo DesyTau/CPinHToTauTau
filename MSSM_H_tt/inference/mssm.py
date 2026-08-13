@@ -10,7 +10,11 @@ import re
 from columnflow.inference import inference_model, ParameterType
 from columnflow.config_util import get_datasets_from_process
 from MSSM_H_tt.inference.base import HCPModelBase
-from MSSM_H_tt.config.mass_points import read_bdt_masses
+from MSSM_H_tt.config.mass_points import (
+    read_bdt_masses,
+    get_bdt_mass_block,
+    get_bdt_card_producer_name,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -34,7 +38,7 @@ BDT_CARD_VARIABLES = (
 #   block 2: 120, 125, 130, 135, 140, 160
 #   ...
 #
-BDT_HIST_MASS_BLOCK_SIZE = 6
+
 
 def get_bdt_mass_blocks():
     masses = list(read_bdt_masses())
@@ -85,16 +89,9 @@ class MSSM_model(HCPModelBase):
             )
 
         # Find the block containing this mass.
-        mass_index = masses.index(mass)
-
-        block_start = (
-            mass_index // BDT_HIST_MASS_BLOCK_SIZE
-        ) * BDT_HIST_MASS_BLOCK_SIZE
-
-        block_masses = masses[
-            block_start:
-            block_start + BDT_HIST_MASS_BLOCK_SIZE
-        ]
+        block_masses = get_bdt_mass_block(
+            mass
+        )
 
         # Crucially, every mass belonging to the same block returns exactly
         # the same set of histogram variables.
@@ -118,6 +115,74 @@ class MSSM_model(HCPModelBase):
             out |= self._bdt_hist_group_for_variable(variable)
 
         return out
+    def get_hist_requirement_producers(
+        self,
+        variables: set[str],
+        default_producers: tuple[str, ...],
+        ) -> tuple[str, ...]:
+        """
+        For a one-mass MSSM datacard, use the common
+        producer plus the BDT producer corresponding to
+        that mass block.
+        """
+
+        masses = set()
+
+        for variable in variables:
+            match = re.match(
+                r"^bdt_"
+                r"(D_sig_vs_Disc_ggphi|"
+                r"D_sig_vs_Disc_bbphi|"
+                r"D_DY|D_TT)"
+                r"_M([0-9]+)$",
+                variable,
+            )
+
+            if match:
+                masses.add(
+                    int(match.group(2))
+                )
+
+        # Nothing BDT-specific.
+        if not masses:
+            return tuple(default_producers)
+
+        blocks = {
+            tuple(get_bdt_mass_block(mass))
+            for mass in masses
+        }
+
+        # The unspecialized model can contain all masses.
+        # Keep the normal producer behavior in that case.
+        if len(blocks) != 1:
+            return tuple(default_producers)
+
+        mass = next(iter(masses))
+
+        bdt_producer = (
+            get_bdt_card_producer_name(mass)
+        )
+
+        # Remove the old full producer if present.
+        other_producers = [
+            producer
+            for producer in default_producers
+            if (
+                producer != "main"
+                and not producer.startswith(
+                    "bdt_card_M"
+                )
+                and producer != "main_common"
+            )
+        ]
+
+        return tuple(
+            [
+                *other_producers,
+                "main_common",
+                bdt_producer,
+            ]
+        )
 
     name = "MSSM_model"
     add_qcd = True

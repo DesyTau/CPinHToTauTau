@@ -133,7 +133,6 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         zpt_weight,
         hcand_fields,
         hcand_mt,
-        category_ids,
         number_b_jet,
         create_jetID_masks,
         jet_pt_def,
@@ -152,7 +151,6 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         unclustered_met,
         theor_unc,
         "PuppiMET.pt", "PuppiMET.phi", "PuppiMET.covXX", "PuppiMET.covXY", "PuppiMET.covYY",
-        bdt_2d_variables,
         add_unclustered_to_recoilcorrmet,
     },
     produces={
@@ -170,8 +168,6 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         zpt_weight,
         hcand_fields,
         hcand_mt,
-        category_ids,
-
         # jet producers
         number_b_jet,
         create_jetID_masks,
@@ -190,7 +186,6 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         gen_dilepton,
         recoil_corrected_met,
         trigger_sf,
-        mssm_bdt_score,
         fastMTT,
         pt_H,
         D_zeta,
@@ -203,12 +198,11 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         "RecoilCorrMET.phi_unclustered_up",
         "RecoilCorrMET.pt_unclustered_down",
         "RecoilCorrMET.phi_unclustered_down",
-        bdt_2d_variables,
         add_unclustered_to_recoilcorrmet,
         },
     produce_weights=True,
 )
-def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
+def main_common(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     processes = self.dataset_inst.processes.names()
 
     events = self[attach_coffea_behavior](events, **kwargs)
@@ -289,15 +283,6 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     print("Producing D_zeta features...")
     events = self[D_zeta](events, **kwargs)
 
-    print("Producing BDT scores...")
-    events = self[mssm_bdt_score](events, **kwargs)
-
-    print("Producing BDT variables...")
-    events = self[bdt_2d_variables](events, **kwargs)
-
-    print("Producing category ids...")
-    events = self[category_ids](events, **kwargs)
-    
     # ------------------------------------------------------------
     # Optional DY split
     # ------------------------------------------------------------
@@ -395,12 +380,62 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
 
     return events
 
-@main.init
-def main_init(self: Producer) -> None:
-    # main computes MET-dependent derived variables after recoil_corrected_met,
-    # so main itself must run for MET and recoil shifted branches.
+@main_common.init
+def main_common_init(self: Producer) -> None:
+    # main_common computes MET-dependent derived variables after recoil_corrected_met,
+    # so main_common itself must run for MET and recoil shifted branches.
     self.shifts |= {
         shift_inst.name
         for shift_inst in self.config_inst.shifts
         if shift_inst.has_tag("met") or shift_inst.has_tag("met_recoil")
     }
+
+@producer(
+    uses={
+        main_common,
+        mssm_bdt_score,
+        bdt_2d_variables,
+        category_ids,
+    },
+    produces={
+        main_common,
+        mssm_bdt_score,
+        bdt_2d_variables,
+        category_ids,
+    },
+    produce_weights=True,
+)
+def main(
+    self: Producer,
+    events: ak.Array,
+    **kwargs,
+) -> ak.Array:
+    """
+    Backward-compatible full producer used for plotting and
+    workflows that require all BDT masses.
+    """
+
+    events = self[main_common](
+        events,
+        **kwargs,
+    )
+    print("Producing mssm_bdt_score...")
+
+    events = self[mssm_bdt_score](
+        events,
+        **kwargs,
+    )
+    
+    print("Producing bdt_2d_variables...")
+    events = self[bdt_2d_variables](
+        events,
+        **kwargs,
+    )
+    
+    print("Producing category_ids...")
+    events = self[category_ids](
+        events,
+        **kwargs,
+    )
+
+    return events
