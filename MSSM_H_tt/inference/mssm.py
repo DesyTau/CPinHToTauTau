@@ -36,7 +36,14 @@ BDT_CARD_VARIABLES = (
 #
 BDT_HIST_MASS_BLOCK_SIZE = 6
 
+def get_bdt_mass_blocks():
+    masses = list(read_bdt_masses())
 
+    return [
+        tuple(masses[i:i + BDT_HIST_MASS_BLOCK_SIZE])
+        for i in range(0, len(masses), BDT_HIST_MASS_BLOCK_SIZE)
+    ]
+    
 class MSSM_model(HCPModelBase):
     """
     Default statistical model for MSSM analysis.

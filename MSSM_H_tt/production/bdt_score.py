@@ -61,9 +61,20 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
 # -------------------------------------------------------------------------
 # Mass points and model locations
 # -------------------------------------------------------------------------
-from MSSM_H_tt.config.mass_points import read_bdt_masses
-MASS_POINTS = read_bdt_masses()
+from MSSM_H_tt.config.mass_points import (
+    read_bdt_masses,
+    get_bdt_mass_blocks,
+    get_bdt_mass_block_tag,
+)
 
+MASS_POINTS = tuple(read_bdt_masses())
+BDT_CARD_DISCRIMINANTS = (
+    "D_sig",
+    "Disc_ggphi",
+    "Disc_bbphi",
+    "D_DY",
+    "D_TT",
+)
 # Keep this synchronized with the training script.
 CLIP_JET_COUNT_FEATURES = True
 N_BJETS_CLIP_MIN = 0.0
@@ -75,6 +86,31 @@ BDT_EOS_BASE = Path(
     "/eos/project/d/desytau/public/jmalvaso/"
     f"bdt_3_classes_10_features_{JET_COUNT_MODE_TAG}"
 )
+
+def _bdt_score_output_columns(
+    masses,
+    discriminants,
+    produce_bdt_cat=True,
+):
+    columns = {
+        f"bdt_raw_score_{label}_M{mass}"
+        for mass in masses
+        for label in BDT_LABELS
+    }
+
+    columns |= {
+        f"bdt_{disc}_M{mass}"
+        for mass in masses
+        for disc in discriminants
+    }
+
+    if produce_bdt_cat:
+        columns |= {
+            f"bdt_cat_M{mass}"
+            for mass in masses
+        }
+
+    return columns
 
 
 def _even_path(mass: int) -> str:
@@ -291,32 +327,29 @@ def _eval_model_or_empty(evaluator, key, features, n_classes):
 # -------------------------------------------------------------------------
 @producer(
     uses={
-            "event",
-            "N_b_jets",
-            "dijet.deltaeta",
-            "hcand_*.mt_tot",
-            "hcand_*.fastMTT.mass",
-            "lead_b_jet.pt",
-            "lead_b_jet.eta",
-            "sublead_jet.pt",
-            "sublead_jet.eta",
-            "hcand_*.mass",
-            "D_zeta",
-        },
-    produces=(
-        {
-            f"bdt_raw_score_{lbl}_M{m}"
-            for m in MASS_POINTS
-            for lbl in BDT_LABELS
-        }
-        | {
-            f"bdt_{disc}_M{m}"
-            for m in MASS_POINTS
-            for disc in BDT_DISCRIMINANTS
-        }
-        | {f"bdt_cat_M{m}" for m in MASS_POINTS}
+        "event",
+        "N_b_jets",
+        "dijet.deltaeta",
+        "hcand_*.mt_tot",
+        "hcand_*.fastMTT.mass",
+        "lead_b_jet.pt",
+        "lead_b_jet.eta",
+        "sublead_jet.pt",
+        "sublead_jet.eta",
+        "hcand_*.mass",
+        "D_zeta",
+    },
+    produces=_bdt_score_output_columns(
+        MASS_POINTS,
+        BDT_DISCRIMINANTS,
+        produce_bdt_cat=True,
     ),
-    sandbox=dev_sandbox("bash::$HTTCP_BASE/sandboxes/venv_columnar_xgb.sh"),
+    mass_points=MASS_POINTS,
+    discriminants=tuple(BDT_DISCRIMINANTS),
+    produce_bdt_cat=True,
+    sandbox=dev_sandbox(
+        "bash::$HTTCP_BASE/sandboxes/venv_columnar_xgb.sh"
+    ),
 )
 def mssm_bdt_score(
     self: Producer,
@@ -403,14 +436,24 @@ def mssm_bdt_score(
                     np.ascontiguousarray(output[:, idx]),
                 )
 
-        for name, values in discriminants.items():
-                events = set_ak_column_f32(
-                    events,
-                    f"bdt_{name}_M{mass}",
-                    np.ascontiguousarray(values.astype(np.float32)),
-                )
+        for name in self.discriminants:
+            values = discriminants[name]
 
-        events = set_ak_column_i32(
+            events = set_ak_column_f32(
+                events,
+                f"bdt_{name}_M{mass}",
+                np.ascontiguousarray(
+                    values.astype(np.float32)
+                ),
+            )
+            
+        if self.produce_bdt_cat:
+            bdt_cat = np.argmax(
+                output,
+                axis=1,
+            ).astype(np.int32)
+
+            events = set_ak_column_i32(
                 events,
                 f"bdt_cat_M{mass}",
                 np.ascontiguousarray(bdt_cat),
@@ -466,3 +509,29 @@ def mssm_bdt_score_teardown(self: Producer, **kwargs) -> None:
     """
     if (evaluator := getattr(self, "evaluator", None)) is not None:
         evaluator.stop()
+        
+MSSM_BDT_SCORE_BLOCK_PRODUCERS = {}
+
+
+for block in get_bdt_mass_blocks():
+    block = tuple(block)
+    tag = get_bdt_mass_block_tag(block)
+
+    cls_name = f"mssm_bdt_score_{tag}"
+
+    producer_cls = mssm_bdt_score.derive(
+        cls_name,
+        cls_dict={
+            "mass_points": block,
+            "discriminants": BDT_CARD_DISCRIMINANTS,
+            "produce_bdt_cat": False,
+            "produces": _bdt_score_output_columns(
+                block,
+                BDT_CARD_DISCRIMINANTS,
+                produce_bdt_cat=False,
+            ),
+        },
+    )
+
+    globals()[cls_name] = producer_cls
+    MSSM_BDT_SCORE_BLOCK_PRODUCERS[block] = producer_cls
