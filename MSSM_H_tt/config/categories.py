@@ -244,11 +244,21 @@ def add_categories(config: od.Config,
                 },
             })
 
+    # bdt_parent_categories = [
+    #     f"cat_{channel}_sr",
+    #     f"cat_{channel}_abcd_ar",
+    #     f"cat_{channel}_abcd_dr_num",
+    #     f"cat_{channel}_abcd_dr_den",
+    #     ]
+    
+    # create_child_categories(
+    #     config,
+    #     parent_categories=bdt_parent_categories,
+    #     child_category_map=bdt_cats_map,
+    # )
+
     create_child_categories(
         config,
         parent_categories=config.categories.names(),
         child_category_map=bdt_cats_map,
     )
-
-    # # if channel=='emu':
-    # #     from IPython import embed; embed()

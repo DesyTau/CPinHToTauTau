@@ -649,50 +649,50 @@ def add_run3(ana: od.Analysis,
     # https://cms-jerc.web.cern.ch/Recommendations/#uncertainites-and-correlations
     jec_source_era = f"{year}{campaign.x.postfix}"
     all_jec_sources = {
-        "AbsoluteFlavMap": False,
-        "AbsoluteMPFBias": False,
+        "AbsoluteFlavMap": False, 
+        "AbsoluteMPFBias": True, #100% correlated
         "AbsoluteSample": False,
-        "AbsoluteScale": False,
-        "AbsoluteStat": False,
+        "AbsoluteScale": True, #100% correlated
+        "AbsoluteStat": True, #0% correlated
         "FlavorPhotonJet": False,
         "FlavorPureBottom": False,
         "FlavorPureCharm": False,
         "FlavorPureGluon": False,
         "FlavorPureQuark": False,
-        "FlavorQCD": False,
+        "FlavorQCD": True, #100% correlated
         "FlavorZJet": False,
-        "Fragmentation": False,
-        "PileUpDataMC": False,
+        "Fragmentation": True, #100% correlated
+        "PileUpDataMC": True, #50% correlated
         "PileUpEnvelope": False,
         "PileUpMuZero": False,
-        "PileUpPtBB": False,
-        "PileUpPtEC1": False,
-        "PileUpPtEC2": False,
-        "PileUpPtHF": False,
-        "PileUpPtRef": False,
-        "RelativeBal": False,
-        "RelativeFSR": False,
-        "RelativeJEREC1": False,
-        "RelativeJEREC2": False,
-        "RelativeJERHF": False,
-        "RelativePtBB": False,
-        "RelativePtEC1": False,
-        "RelativePtEC2": False,
-        "RelativePtHF": False,
-        "RelativeSample": False,
-        "RelativeStatEC": False,
-        "RelativeStatFSR": False,
-        "RelativeStatHF": False,
-        "SinglePionECAL": False,
-        "SinglePionHCAL": False,
+        "PileUpPtBB": True, #50% correlated
+        "PileUpPtEC1": True, #50% correlated
+        "PileUpPtEC2": True, #50% correlated
+        "PileUpPtHF": True, #50% correlated
+        "PileUpPtRef": True, #50% correlated
+        "RelativeFSR": True, #50% correlated
+        "RelativeJEREC1": True, #0% correlated
+        "RelativeJEREC2": True, #0% correlated
+        "RelativeJERHF": True, #50% correlated
+        "RelativePtBB": True, #50% correlated
+        "RelativePtEC1": True, #0% correlated
+        "RelativePtEC2": True, #0% correlated
+        "RelativePtHF": True, #50% correlated
+        "RelativeBal": True, #50% correlated   
+        "RelativeSample": True, #0% correlated
+        "RelativeStatEC": True, #0% correlated
+        "RelativeStatFSR": True, #0% correlated
+        "RelativeStatHF": True, #0% correlated
+        "SinglePionECAL": True, #100% correlated
+        "SinglePionHCAL": True, #100% correlated
+        "TimePtEta": True, #0% correlated
         "SubTotalAbsolute": False,
         "SubTotalMC": False,
         "SubTotalPileUp": False,
         "SubTotalPt": False,
         "SubTotalRelative": False,
         "SubTotalScale": False,
-        "TimePtEta": False,
-        "Total": True,
+        "Total": False,
         "TotalNoFlavor": False,
         "TotalNoFlavorNoTime": False,
         "TotalNoTime": False,

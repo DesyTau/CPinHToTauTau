@@ -4,49 +4,49 @@ set -euo pipefail
 usage() {
 cat <<'EOF'
 Usage:
-  ./MSSM_create_datacards.sh CONFIG [options] [extra law options]
+./MSSM_create_datacards.sh CONFIG [options] [extra law options]
 
 Options:
   --masses "M1 M2 M3"       Run only these masses
   --masses M1,M2,M3         Same, comma-separated
-  --mass M                  Add one mass point; can be repeated
-  --all-masses              Run the full default mass list
-  --poll-interval T         Polling interval for HTCondor tasks, e.g. 30m, 1h.
-                             Default: $POLL_INTERVAL if set, otherwise 1h.
-  -h, --help                Show this help
+  --mass M                   Add one mass point; can be repeated
+  --all-masses               Run the full default mass list
+  --poll-interval T          Polling interval for HTCondor tasks, e.g. 30m, 1h.
+                             Default: $POLL_INTERVAL if set, otherwise 5m.
+  -h, --help                 Show this help
 
 This script creates four datacards per mass point:
 
-  1. MSSM_model_D_sig_vs_Disc_ggphi_M{MASS}
-     category: bdt_cat_ggphi_and_bbphi_M{MASS}
-     variable: bdt_D_sig_vs_Disc_ggphi_M{MASS}
-     signal:   ggphi
+1. MSSM_model_D_sig_vs_Disc_ggphi_M{MASS}
+   category: bdt_cat_ggphi_and_bbphi_M{MASS}
+   variable: bdt_D_sig_vs_Disc_ggphi_M{MASS}
+   signal:   ggphi
 
-  2. MSSM_model_D_sig_vs_Disc_bbphi_M{MASS}
-     category: bdt_cat_ggphi_and_bbphi_M{MASS}
-     variable: bdt_D_sig_vs_Disc_bbphi_M{MASS}
-     signal:   bbphi
+2. MSSM_model_D_sig_vs_Disc_bbphi_M{MASS}
+   category: bdt_cat_ggphi_and_bbphi_M{MASS}
+   variable: bdt_D_sig_vs_Disc_bbphi_M{MASS}
+   signal:   bbphi
 
-  3. MSSM_model_D_DY_M{MASS}
-     category: bdt_cat_dy_M{MASS}
-     variable: bdt_D_DY_M{MASS}
+3. MSSM_model_D_DY_M{MASS}
+   category: bdt_cat_dy_M{MASS}
+   variable: bdt_D_DY_M{MASS}
 
-  4. MSSM_model_D_TT_M{MASS}
-     category: bdt_cat_tt_M{MASS}
-     variable: bdt_D_TT_M{MASS}
+4. MSSM_model_D_TT_M{MASS}
+   category: bdt_cat_tt_M{MASS}
+   variable: bdt_D_TT_M{MASS}
 
 Examples:
-  ./MSSM_create_datacards.sh 23_emu
+./MSSM_create_datacards.sh 23_emu
 
-  ./MSSM_create_datacards.sh 23_emu --masses "100 200 300"
+./MSSM_create_datacards.sh 23_emu --masses "100 200 300"
 
-  ./MSSM_create_datacards.sh 23_emu --masses 100,200,300
+./MSSM_create_datacards.sh 23_emu --masses 100,200,300
 
-  ./MSSM_create_datacards.sh 23_emu --mass 100 --mass 200 --mass 300
+./MSSM_create_datacards.sh 23_emu --mass 100 --mass 200 --mass 300
 
-  ./MSSM_create_datacards.sh 23_emu --masses "100 200" --poll-interval 1h --workers 1
+./MSSM_create_datacards.sh 23_emu --masses "100 200" --poll-interval 1h --workers 1
 
-  POLL_INTERVAL=45m ./MSSM_create_datacards.sh 23_emu --mass 60 --workers 1
+POLL_INTERVAL=45m ./MSSM_create_datacards.sh 23_emu --mass 60 --workers 1
 EOF
 }
 
@@ -65,11 +65,14 @@ shift
 
 source ./common_run3_MSSM.sh
 set_common_vars "$config_arg"
+
 # ----------------------------------------------------------------------
 # Isolate simultaneous submissions from different lxplus machines.
+#
 # This avoids sharing transient LAW job files and HTCondor user-log
 # directories between independent script invocations.
 # ----------------------------------------------------------------------
+
 run_id="${RUN_ID:-${config_arg}_$(hostname -s)_$(date +%Y%m%d_%H%M%S)_$$}"
 run_id="$(echo "$run_id" | sed 's/[^A-Za-z0-9_.-]/_/g')"
 
@@ -90,10 +93,18 @@ if [[ -n "${CF_HTCONDOR_USERLOG_DIR:-}" ]]; then
     mkdir -p "$CF_HTCONDOR_USERLOG_DIR"
     echo "[info] CF_HTCONDOR_USERLOG_DIR: $CF_HTCONDOR_USERLOG_DIR"
 fi
-version=desy_dev
 
+# ----------------------------------------------------------------------
+# Versions
+#
+# Reuse all existing outputs up to ProduceColumns.
+# Recreate only the histogram layer and the final datacards.
+# ----------------------------------------------------------------------
+
+upstream_version=dust_dev
+hist_version=dust_dev
+# version="dust_dev"
 # Sparse polling by default.
-# This preserves the law dependency chain while strongly reducing status-query frequency.
 poll_interval="${POLL_INTERVAL:-5m}"
 
 default_masses=(
@@ -107,8 +118,11 @@ default_masses=(
     2600 2900 3200 3500
 )
 
-# All Columnflow tasks for which the workflow and polling interval should be forwarded.
-remote_tasks=(
+# ----------------------------------------------------------------------
+# Tasks that should keep using the existing desy_dev outputs.
+# ----------------------------------------------------------------------
+
+upstream_tasks=(
     cf.CalibrateEvents
     cf.SelectEvents
     cf.ReduceEvents
@@ -116,8 +130,15 @@ remote_tasks=(
     cf.MergeSelectionStats
     cf.ProvideReducedEvents
     cf.ProduceColumns
-    cf.MergeHistograms
+)
+
+# ----------------------------------------------------------------------
+# Tasks affected by the mass-block histogram grouping.
+# ----------------------------------------------------------------------
+
+hist_tasks=(
     cf.CreateHistograms
+    cf.MergeHistograms
     cf.MergeShiftedHistograms
 )
 
@@ -136,6 +157,7 @@ add_masses_from_string() {
             echo "[error] Invalid mass value: $m" >&2
             exit 1
         fi
+
         masses+=("$m")
     done
 }
@@ -147,6 +169,7 @@ while [[ $# -gt 0 ]]; do
                 echo "[error] Missing argument after $1" >&2
                 exit 1
             fi
+
             add_masses_from_string "$2"
             shift 2
             ;;
@@ -156,6 +179,7 @@ while [[ $# -gt 0 ]]; do
                 echo "[error] Missing argument after $1" >&2
                 exit 1
             fi
+
             add_masses_from_string "$2"
             shift 2
             ;;
@@ -170,6 +194,7 @@ while [[ $# -gt 0 ]]; do
                 echo "[error] Missing argument after $1" >&2
                 exit 1
             fi
+
             poll_interval="$2"
             shift 2
             ;;
@@ -193,7 +218,8 @@ fi
 
 echo "[info] Config: $config"
 echo "[info] Workflow: $workflow"
-echo "[info] Version: $version"
+echo "[info] Upstream version: $upstream_version"
+echo "[info] Histogram/datacard version: $hist_version"
 echo "[info] Poll interval: $poll_interval"
 echo "[info] Masses to run: ${masses[*]}"
 
@@ -215,15 +241,33 @@ for m in "${masses[@]}"; do
             --config "$config"
 
             --pilot True
-            --version "$version"
+
+            # Version of cf.CreateDatacards itself.
+            --version "$hist_version"
 
             --inference-model "$inference_model"
             --hist-hooks qcd
         )
 
-        for task in "${remote_tasks[@]}"; do
+        # --------------------------------------------------------------
+        # Reuse existing upstream outputs from desy_dev.
+        # --------------------------------------------------------------
+
+        for task in "${upstream_tasks[@]}"; do
             args+=(
-                "--${task}-version" "$version"
+                "--${task}-version" "$upstream_version"
+                "--${task}-workflow" "$workflow"
+                "--${task}-poll-interval" "$poll_interval"
+            )
+        done
+
+        # --------------------------------------------------------------
+        # Recreate the histogram layer with the new mass-block version.
+        # --------------------------------------------------------------
+
+        for task in "${hist_tasks[@]}"; do
+            args+=(
+                "--${task}-version" "$hist_version"
                 "--${task}-workflow" "$workflow"
                 "--${task}-poll-interval" "$poll_interval"
             )
@@ -233,13 +277,11 @@ for m in "${masses[@]}"; do
 
         echo
         echo "[info] Running inference model: $inference_model"
+        echo "[info] Upstream version: $upstream_version"
+        echo "[info] Histogram/datacard version: $hist_version"
         echo "[info] Poll interval: $poll_interval"
+
         echo law run cf.CreateDatacards "${args[@]}"
         law run cf.CreateDatacards "${args[@]}"
     done
 done
-
-# RUN_ID=22_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 22_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler
-# RUN_ID=22EE_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 22EE_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler
-# RUN_ID=23_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 23_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler
-# RUN_ID=23BPix_emu_$(hostname -s)_$(date +%Y%m%d_%H%M%S) \./MSSM_create_datacards.sh 23BPix_emu --mass 60 --workers 1 --poll-interval 5m --local-scheduler

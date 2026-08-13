@@ -5,49 +5,105 @@ Inference model for the MSSM analysis.
 """
 
 import law
+import re
 
 from columnflow.inference import inference_model, ParameterType
 from columnflow.config_util import get_datasets_from_process
 from MSSM_H_tt.inference.base import HCPModelBase
 from MSSM_H_tt.config.mass_points import read_bdt_masses
-import re
+
+
+# -----------------------------------------------------------------------------
+# BDT histogram grouping
+# -----------------------------------------------------------------------------
+
+# Final variables needed by the four datacards at each mass point.
+BDT_CARD_VARIABLES = (
+    "D_sig_vs_Disc_ggphi",
+    "D_sig_vs_Disc_bbphi",
+    "D_DY",
+    "D_TT",
+)
+
+# Number of neighbouring mass points whose histograms are produced together.
+#
+# With the current mass list and block size 6:
+#
+#   block 0: 60, 65, 70, 75, 80, 85
+#   block 1: 90, 95, 100, 105, 110, 115
+#   block 2: 120, 125, 130, 135, 140, 160
+#   ...
+#
+BDT_HIST_MASS_BLOCK_SIZE = 6
+
 
 class MSSM_model(HCPModelBase):
     """
     Default statistical model for MSSM analysis.
     """
+
     @staticmethod
     def _bdt_hist_group_for_variable(variable: str) -> set[str]:
         """
-        For any final MSSM BDT datacard variable of a given mass, return the full
-        four-variable group that should be produced together upstream.
+        For any final MSSM BDT datacard variable, return the complete set
+        of datacard variables belonging to the same mass block.
 
-        This affects only histogram requirements, not the datacard category
-        definition itself.
+        Example for block size 6:
+
+            bdt_D_DY_M100
+
+        expands to the four datacard variables for
+
+            M90, M95, M100, M105, M110, M115.
+
+        This affects only histogram requirements. It does not change the
+        datacard category, signal mass, BDT response, or physics definition.
         """
         match = re.match(
             r"^bdt_(D_sig_vs_Disc_ggphi|D_sig_vs_Disc_bbphi|D_DY|D_TT)_M([0-9]+)$",
             variable,
         )
 
+        # Non-BDT variables are left untouched.
         if not match:
             return {variable}
 
-        mass = match.group(2)
+        mass = int(match.group(2))
+        masses = list(read_bdt_masses())
 
+        if mass not in masses:
+            raise ValueError(
+                f"BDT mass {mass} is not present in the configured mass points: "
+                f"{masses}"
+            )
+
+        # Find the block containing this mass.
+        mass_index = masses.index(mass)
+
+        block_start = (
+            mass_index // BDT_HIST_MASS_BLOCK_SIZE
+        ) * BDT_HIST_MASS_BLOCK_SIZE
+
+        block_masses = masses[
+            block_start:
+            block_start + BDT_HIST_MASS_BLOCK_SIZE
+        ]
+
+        # Crucially, every mass belonging to the same block returns exactly
+        # the same set of histogram variables.
         return {
-            f"bdt_D_sig_vs_Disc_ggphi_M{mass}",
-            f"bdt_D_sig_vs_Disc_bbphi_M{mass}",
-            f"bdt_D_DY_M{mass}",
-            f"bdt_D_TT_M{mass}",
+            f"bdt_{discriminant}_M{block_mass}"
+            for block_mass in block_masses
+            for discriminant in BDT_CARD_VARIABLES
         }
-
 
     def get_hist_requirement_variables(self, variables: set[str]) -> set[str]:
         """
-        Expand one BDT datacard variable into the full four-variable group for the
-        same mass, so all four datacard models share the same upstream histogram
-        production.
+        Expand the variables requested by the inference model into complete
+        BDT mass blocks.
+
+        This allows several mass hypotheses to share the same upstream
+        CreateHistograms / MergeHistograms tasks.
         """
         out = set()
 
