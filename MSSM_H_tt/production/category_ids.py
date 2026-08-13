@@ -1,10 +1,10 @@
-# coding: utf-8
-
 import re
 
-from columnflow.production.categories import (
-    category_ids as cf_category_ids,
-)
+from columnflow.production.categories import category_ids as cf_category_ids
+
+# Important:
+# register all MSSM_H_tt categorizers before constructing category_ids producers
+import MSSM_H_tt.categorization.main  # noqa: F401
 
 from MSSM_H_tt.config.mass_points import (
     get_bdt_mass_blocks,
@@ -12,30 +12,20 @@ from MSSM_H_tt.config.mass_points import (
 )
 
 
-_BDT_CATEGORY_MASS_RE = re.compile(
-    r"__bdt_.+_M([0-9]+)$"
-)
+_BDT_CATEGORY_MASS_RE = re.compile(r"__bdt_.+_M([0-9]+)$")
 
 
-def _skip_category_outside_mass_block(
-    self,
-    category_inst,
-):
-    match = _BDT_CATEGORY_MASS_RE.search(
-        category_inst.name
-    )
+def _skip_category_outside_mass_block(self, category_inst):
+    match = _BDT_CATEGORY_MASS_RE.search(category_inst.name)
 
-    # Keep all categories unrelated to the BDT.
     if not match:
         return False
 
     mass = int(match.group(1))
-
     return mass not in self.mass_points
 
 
 CATEGORY_IDS_BLOCK_PRODUCERS = {}
-
 
 for block in get_bdt_mass_blocks():
     block = tuple(block)
@@ -47,13 +37,9 @@ for block in get_bdt_mass_blocks():
         cls_name,
         cls_dict={
             "mass_points": block,
-            "skip_category": (
-                _skip_category_outside_mass_block
-            ),
+            "skip_category": _skip_category_outside_mass_block,
         },
     )
 
     globals()[cls_name] = producer_cls
-    CATEGORY_IDS_BLOCK_PRODUCERS[block] = (
-        producer_cls
-    )
+    CATEGORY_IDS_BLOCK_PRODUCERS[block] = producer_cls

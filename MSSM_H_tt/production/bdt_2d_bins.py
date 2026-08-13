@@ -94,6 +94,17 @@ BDT_INPUTS = (
     "Disc_bbphi",
 )
 
+# Full set, kept for plots/general production
+BDT_2D_PAIRS = (
+    ("D_sig_vs_D_ggphi", "D_sig", "D_ggphi"),
+    ("D_sig_vs_D_bbphi", "D_sig", "D_bbphi"),
+    ("D_ggphi_vs_D_bbphi", "D_ggphi", "D_bbphi"),
+
+    ("D_sig_vs_Disc_ggphi", "D_sig", "Disc_ggphi"),
+    ("D_sig_vs_Disc_bbphi", "D_sig", "Disc_bbphi"),
+)
+
+
 
 # Flattened 2D variables to produce.
 BDT_CARD_2D_PAIRS = (
