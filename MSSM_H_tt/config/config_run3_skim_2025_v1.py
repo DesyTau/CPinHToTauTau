@@ -1288,6 +1288,61 @@ def add_run3(ana: od.Analysis,
     add_shift_aliases(cfg, "CMS_PS_FSR", {"ps_weight": "ps_weight_PS_FSR_{direction}"})
     
     ################################################################################################
+    # Theory uncertainty applicability
+    #
+    # These patterns refer to the inference/combine process names, not dataset names.
+    #
+    # DY and tt are intentionally excluded because theor_unc currently sets their
+    # LHE/PS variations to unity.
+    ################################################################################################
+
+    cfg.x.theory_uncertainty_processes = {
+        "CMS_Scale_muR": (
+            "wj",
+            "vv",
+            "vvv",
+            "st",
+            "h_ggf_htt_sm_prod_sm",
+            "h_vbf_htt_sm",
+            "vh_htt",
+            "ggphi_phitt_*",
+            "bbphi_phitt_*",
+        ),
+        "CMS_Scale_muF": (
+            "wj",
+            "vv",
+            "vvv",
+            "st",
+            "h_ggf_htt_sm_prod_sm",
+            "h_vbf_htt_sm",
+            "vh_htt",
+            "ggphi_phitt_*",
+            "bbphi_phitt_*",
+        ),
+        "CMS_PS_ISR": (
+            "wj",
+            "vv",
+            "vvv",
+            "st",
+            "h_ggf_htt_sm_prod_sm",
+            "h_vbf_htt_sm",
+            "vh_htt",
+            "ggphi_phitt_*",
+            "bbphi_phitt_*",
+        ),
+        "CMS_PS_FSR": (
+            "wj",
+            "vv",
+            "vvv",
+            "st",
+            "h_ggf_htt_sm_prod_sm",
+            "h_vbf_htt_sm",
+            "vh_htt",
+            "ggphi_phitt_*",
+            "bbphi_phitt_*",
+        ),
+    }
+    ################################################################################################
     # btag weight systematics saved as:
     #   btag_weight_<source>_down / btag_weight_<source>_up
     ################################################################################################

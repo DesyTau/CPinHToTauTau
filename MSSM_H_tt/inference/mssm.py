@@ -938,15 +938,16 @@ class MSSM_model(HCPModelBase):
             default = _default_shape_scope()
 
             if src in theory_shape_sources:
-                excluded_theory_processes = {
-                    "tt",
-                    "dy_tt_m50",
-                    "dy_lep",
-                }
+                theory_process_patterns = (
+                    cfg0.x.theory_uncertainty_processes.get(src, ())
+                )
 
                 return [
                     p for p in default
-                    if p not in excluded_theory_processes
+                    if law.util.multi_match(
+                        p,
+                        theory_process_patterns,
+                    )
                 ]
 
             if src == "top_pt_weight":

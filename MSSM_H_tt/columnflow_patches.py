@@ -115,14 +115,41 @@ def patch_inference_hist_requirements():
                 shift_sources = _get_requirement_shift_sources(
                     self,
                     config_inst,
-                    proc_obj,
-                )
+                    proc_obj,)
 
-                logger.debug(
-                    f"inference histogram requirements for "
-                    f"{config_inst.name}/{proc_obj.name}: "
-                    f"variables={variables}, "
-                    f"shift_sources={shift_sources}"
+                # -------------------------------------------------------------
+                # Diagnostic: print the exact histogram shifts that will be
+                # requested for this inference process.
+                # -------------------------------------------------------------
+
+                requested_shifts = ["nominal"]
+
+                for shift_source in shift_sources:
+                    for direction in ("up", "down"):
+                        shift_name = f"{shift_source}_{direction}"
+
+                        try:
+                            config_inst.get_shift(shift_name)
+                        except Exception:
+                            logger.warning(
+                                "[SHIFT AUDIT] shift '%s' requested for "
+                                "%s/%s but not found in config",
+                                shift_name,
+                                config_inst.name,
+                                proc_obj.name,
+                            )
+                            continue
+
+                        requested_shifts.append(shift_name)
+
+                logger.info(
+                    "[SHIFT AUDIT] config=%s | process=%s | datasets=%s | "
+                    "shift_sources=%s | shifts=%s",
+                    config_inst.name,
+                    proc_obj.name,
+                    ",".join(datasets),
+                    ",".join(shift_sources) if shift_sources else "<none>",
+                    ",".join(requested_shifts),
                 )
 
                 reqs[config_inst.name][proc_obj.name] = {

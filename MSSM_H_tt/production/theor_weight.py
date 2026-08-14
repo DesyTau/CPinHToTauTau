@@ -11,6 +11,8 @@ from columnflow.util import maybe_import, load_correction_set
 
 import law
 
+logger = law.logger.get_logger(__name__)
+
 ak = maybe_import("awkward")
 np = maybe_import("numpy")
 coffea = maybe_import("coffea")
@@ -40,7 +42,60 @@ def theor_unc(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
             or dataset_inst.has_tag("ttbar")
         )
     )
+    # -------------------------------------------------------------------------
+    # Audit availability of theory-variation columns.
+    #
+    # Print only once per producer instance / dataset.
+    # -------------------------------------------------------------------------
 
+    if not getattr(self, "_theory_audit_printed", False):
+        dataset_name = (
+            dataset_inst.name
+            if dataset_inst is not None
+            else "<unknown>"
+        )
+
+        has_lhe_field = "LHEScaleWeight" in events.fields
+        has_ps_field = "PSWeight" in events.fields
+
+        has_valid_lhe = False
+        has_valid_ps = False
+
+        if len(events):
+            if has_lhe_field:
+                has_valid_lhe = bool(
+                    ak.any(
+                        ak.num(
+                            events.LHEScaleWeight,
+                            axis=1,
+                        ) == 9
+                    )
+                )
+
+            if has_ps_field:
+                has_valid_ps = bool(
+                    ak.any(
+                        ak.num(
+                            events.PSWeight,
+                            axis=1,
+                        ) == 4
+                    )
+                )
+
+        logger.info(
+            "[THEORY AUDIT] dataset=%s | "
+            "DY/ttbar_skip=%s | "
+            "LHEScaleWeight=%s valid9=%s | "
+            "PSWeight=%s valid4=%s",
+            dataset_name,
+            is_dy_or_ttbar,
+            has_lhe_field,
+            has_valid_lhe,
+            has_ps_field,
+            has_valid_ps,
+        )
+
+        self._theory_audit_printed = True
     if is_dy_or_ttbar:
         print("Skipping theoretical uncertainty production for DY/ttbar. Adding dummy weights = 1.")
 
