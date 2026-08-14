@@ -102,47 +102,135 @@ def httcp_create_hist(self: HistProducer, variables: list[od.Variable], task: la
     return histograms
 
 @httcp_hist_producer.fill_hist
-def httcp_fill_hist(self: HistProducer, h: dict, data: dict[str, Any], task: law.Task) -> None:
+def httcp_fill_hist(
+    self: HistProducer,
+    h: dict,
+    data: dict[str, Any],
+    variables: list[od.Variable],
+    events: ak.Array,
+    task: law.Task,
+) -> None:
     """
     Fill the histogram with the data.
     """
+
     for cat_name in self.config_inst.categories.names():
         cat = self.config_inst.get_category(cat_name)
+
         fill_data = {}
-        if 'apply_ff' not in cat.aux.keys():
-            fill_data['weight'] = data['weight']['nominal']
-        elif cat.aux['apply_ff'] == 'wj':
-            print(f'including TF weights: ff_weight_wj_nominal, category: {cat.name}')
-            fill_data['weight'] = data['weight']['tf_wj']
-        elif cat.aux['apply_ff'] == 'qcd':
-            print(f'applying FF weights: ff_weight_qcd_nominal, category: {cat.name}')
-            fill_data['weight'] = data['weight']['tf_qcd']
-        mask = ak.any(data['category'] == cat.id, axis = 1)
-        fill_data['weight'] = fill_data['weight'][mask]
-        fill_data['category'] = ak.full_like(fill_data['weight'], cat.id, dtype=np.int32)
-        fill_data['shift'] = ak.full_like(fill_data['weight'], data['shift'], dtype=np.int32)
-        fill_data['process'] = data['process'][mask]
-        var_name = [v for v in data.keys() if v not in ['category','process','weight', 'shift']][0]
-        fill_data[var_name] = data[var_name][mask]
-        fill_hist(h[cat.name], fill_data, last_edge_inclusive=task.last_edge_inclusive) 
-        print(var_name)
+
+        # Event weight
+        if "apply_ff" not in cat.aux:
+            fill_data["weight"] = data["weight"]["nominal"]
+
+        elif cat.aux["apply_ff"] == "wj":
+            print(
+                f"including TF weights: ff_weight_wj_nominal, "
+                f"category: {cat.name}"
+            )
+            fill_data["weight"] = data["weight"]["tf_wj"]
+
+        elif cat.aux["apply_ff"] == "qcd":
+            print(
+                f"applying FF weights: ff_weight_qcd_nominal, "
+                f"category: {cat.name}"
+            )
+            fill_data["weight"] = data["weight"]["tf_qcd"]
+
+        # Category mask
+        mask = ak.any(
+            data["category"] == cat.id,
+            axis=1,
+        )
+
+        fill_data["weight"] = fill_data["weight"][mask]
+
+        fill_data["category"] = ak.full_like(
+            fill_data["weight"],
+            cat.id,
+            dtype=np.int32,
+        )
+
+        fill_data["shift"] = ak.full_like(
+            fill_data["weight"],
+            data["shift"],
+            dtype=np.int32,
+        )
+
+        fill_data["process"] = data["process"][mask]
+
+        # Fill all requested variable axes.
+        for variable_inst in variables:
+            var_name = variable_inst.name
+            fill_data[var_name] = data[var_name][mask]
+
+        fill_hist(
+            h[cat.name],
+            fill_data,
+            last_edge_inclusive=task.last_edge_inclusive,
+        )
 
 @httcp_hist_producer.post_process_hist
-def default_post_process_hist(self: HistProducer, h_dict: dict, task: law.Task) -> dict:
+def default_post_process_hist(
+    self: HistProducer,
+    h: dict,
+    task: law.Task,
+) -> Any:
     """
-    Post-process the histogram, converting integer to string axis for consistent lookup across configs where ids might
-    be different.
+    Post-process the histogram, combining the per-category histograms and
+    converting integer categorical axes to string axes.
     """
-    h_list = list(h_dict.values())
-    h = sum(h_list[1:], h_list[0].copy())
-    axis_names = {ax.name for ax in h.axes}
-    if 'process' in axis_names:
-        process_map = {proc_id: self.config_inst.get_process(proc_id).name for proc_id in h.axes['process']}
-        h = translate_hist_intcat_to_strcat(h, 'process', process_map)
-    if 'shift' in axis_names:
-        shift_map = {task.global_shift_inst.id: task.global_shift_inst.name}
-        h = translate_hist_intcat_to_strcat(h, 'shift', shift_map)
-    if 'category' in axis_names:
-        cat_map = {cat_id: self.config_inst.get_category(cat_id).name for cat_id in h.axes['category']}
-        h = translate_hist_intcat_to_strcat(h, 'category', cat_map)
-    return h
+
+    h_list = list(h.values())
+
+    if not h_list:
+        raise RuntimeError("No histograms available for post-processing")
+
+    # Merge category histograms.
+    h_merged = sum(
+        h_list[1:],
+        h_list[0].copy(),
+    )
+
+    axis_names = {
+        ax.name
+        for ax in h_merged.axes
+    }
+
+    if "process" in axis_names:
+        process_map = {
+            proc_id: self.config_inst.get_process(proc_id).name
+            for proc_id in h_merged.axes["process"]
+        }
+
+        h_merged = translate_hist_intcat_to_strcat(
+            h_merged,
+            "process",
+            process_map,
+        )
+
+    if "shift" in axis_names:
+        shift_map = {
+            task.global_shift_inst.id:
+                task.global_shift_inst.name
+        }
+
+        h_merged = translate_hist_intcat_to_strcat(
+            h_merged,
+            "shift",
+            shift_map,
+        )
+
+    if "category" in axis_names:
+        category_map = {
+            cat_id: self.config_inst.get_category(cat_id).name
+            for cat_id in h_merged.axes["category"]
+        }
+
+        h_merged = translate_hist_intcat_to_strcat(
+            h_merged,
+            "category",
+            category_map,
+        )
+
+    return h_merged

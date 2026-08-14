@@ -3,6 +3,7 @@
 set_common_vars() {
 
 version="desy_dev"
+version="dust_dev"
 
 variables_emu_list=(
   "emu_mt_tot" "emu_mt_emu" "D_zeta"
@@ -89,13 +90,13 @@ case $1 in
 #################################
 "22and23_emu")
         config="run3_2022_preEE_emu,run3_2022_postEE_emu,run3_2023_preBPix_emu,run3_2023_postBPix_emu"
-        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal"
+        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal_all"
         datasets="$data_egamma_2022preEE$data_mu_2022preEE${bkgs}:"
         datasets="${datasets}$data_egamma_2022postEE$data_mu_2022postEE${bkgs}:"
         datasets="${datasets}$data_egamma_2023preBPix$data_mu_2023preBPix${bkgs}:"
         datasets="${datasets}$data_egamma_2023postBPix$data_mu_2023postBPix${bkgs}"
         categories='cat_emu_sr'
-        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal"
+        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal_all"
         variables=$variables_emu
         workflow='htcondor'
      ;;
@@ -124,7 +125,7 @@ case $1 in
         categories='cat_emu_sr' #,cat_emu_sr__bdt_tt_M100,cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_bbh_M100,cat_emu_sr__bdt_dy_M100,cat_emu_sr__bdt_tt_M100'
         processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal_all,"
         variables=$variables_emu
-        workflow='htcondor'
+        workflow='local'
      ;;
 "23BPix_emu")
         config="run3_2023_postBPix_emu"
@@ -189,19 +190,11 @@ case $1 in
 #########################        
     "run3_2022preEE_emu_lim")
         config="run3_2022_preEE_emu_limited"
-        datasets='data_egamma_C,TTto2L2Nu,DYto2Tau_MLL_50_0J_amcatnloFXFX,ggphi_phitt_100,bbphi_phitt_100,WtoLNu_madgraphMLM'
-        processes='data,tt_dl,dy_tt_m50,ggphi_phitt_100,bbphi_phitt_100,wj'
-
-        # Inclusive SR plus the three merged BDT categories for M100:
-        #   signal = ggphi + bbphi
-        #   DY
-        #   TT
-        categories='cat_emu_sr,cat_emu_sr__bdt_ggphi_and_bbphi_M100,cat_emu_sr__bdt_dy_M100,cat_emu_sr__bdt_tt_M100'
-
-        # 2D flattened BDT variables for M100
-        variables='bdt_D_sig_vs_Disc_ggphi_M100,bdt_D_sig_vs_Disc_bbphi_M100,bdt_D_sig_vs_D_ggphi_M100,bdt_D_sig_vs_D_bbphi_M100,bdt_D_ggphi_vs_D_bbphi_M100'
-
-        workflow='local'
+        datasets='data_egamma_C,TTto2L2Nu,DYto2Tau_MLL_50_0J_amcatnloFXFX,ggphi_phitt_100,bbphi_phitt_100'
+        processes='data,tt_dl,dy_tt_m50,ggphi_phitt_100,bbphi_phitt_100'
+        categories='cat_emu_sr__bdt_ggphi_and_bbphi_M100'
+        variables='bdt_D_sig_vs_Disc_ggphi_M100,bdt_D_sig_vs_Disc_bbphi_M100'
+        workflow='htcondor'
     ;;
     "run3_2022preEE_emu_lim_uncl")
         config="run3_2022_preEE_emu_limited"

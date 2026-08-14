@@ -143,7 +143,6 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         gen_dilepton,
         recoil_corrected_met,
         trigger_sf,
-        mssm_bdt_score,
         fastMTT,
         pt_H,
         D_zeta,
