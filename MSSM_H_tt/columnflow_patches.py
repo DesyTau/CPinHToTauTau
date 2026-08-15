@@ -48,7 +48,25 @@ def patch_inference_hist_requirements():
     upstream histogram production.
     """
     from columnflow.tasks.framework.inference import SerializeInferenceModelBase
+    
+    def _get_requirement_producers(self, variables):
+        producers = tuple(self.producers)
 
+        get_producers = getattr(
+            self.inference_model_inst,
+            "get_hist_requirement_producers",
+            None,
+        )
+
+        if callable(get_producers):
+            producers = tuple(
+                get_producers(
+                    set(variables),
+                    producers,
+                )
+            )
+
+        return producers
     def _get_requirement_variables(self, config_data):
         variables = {config_data.variable}
 
@@ -91,6 +109,7 @@ def patch_inference_hist_requirements():
                 continue
 
             variables = _get_requirement_variables(self, config_data)
+            producers = _get_requirement_producers(self, variables)
 
             reqs[config_inst.name] = {}
 
@@ -159,6 +178,7 @@ def patch_inference_hist_requirements():
                         dataset=dataset,
                         shift_sources=shift_sources,
                         variables=variables,
+                        producers=producers,
                         **req_kwargs,
                     )
                     for dataset in datasets
@@ -189,6 +209,7 @@ def patch_inference_hist_requirements():
                         config=config_inst.name,
                         dataset=dataset,
                         variables=variables,
+                        producers=producers,
                         **req_kwargs,
                     )
                     for dataset in data_datasets

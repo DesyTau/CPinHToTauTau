@@ -529,7 +529,7 @@ def add_run3(ana: od.Analysis,
             "wph_htt_flat",
             "wmh_htt_flat"
             ],
-        "wj": [         
+        "wjets": [         
             "wj",
             "wj_1j",
             "wj_2j",
@@ -648,72 +648,91 @@ def add_run3(ana: od.Analysis,
     # the boolean flag decides whether to use them in the JEC config and if shifts should be created for them
     # https://cms-jerc.web.cern.ch/Recommendations/#uncertainites-and-correlations
     jec_source_era = f"{year}{campaign.x.postfix}"
+    
     all_jec_sources = {
-        "AbsoluteFlavMap": False, 
-        "AbsoluteMPFBias": True, #100% correlated
-        "AbsoluteSample": False,
-        "AbsoluteScale": True, #100% correlated
-        "AbsoluteStat": True, #0% correlated
-        "FlavorPhotonJet": False,
-        "FlavorPureBottom": False,
-        "FlavorPureCharm": False,
-        "FlavorPureGluon": False,
-        "FlavorPureQuark": False,
-        "FlavorQCD": True, #100% correlated
-        "FlavorZJet": False,
-        "Fragmentation": True, #100% correlated
-        "PileUpDataMC": True, #50% correlated
-        "PileUpEnvelope": False,
-        "PileUpMuZero": False,
-        "PileUpPtBB": True, #50% correlated
-        "PileUpPtEC1": True, #50% correlated
-        "PileUpPtEC2": True, #50% correlated
-        "PileUpPtHF": True, #50% correlated
-        "PileUpPtRef": True, #50% correlated
-        "RelativeFSR": True, #50% correlated
-        "RelativeJEREC1": True, #0% correlated
-        "RelativeJEREC2": True, #0% correlated
-        "RelativeJERHF": True, #50% correlated
-        "RelativePtBB": True, #50% correlated
-        "RelativePtEC1": True, #0% correlated
-        "RelativePtEC2": True, #0% correlated
-        "RelativePtHF": True, #50% correlated
-        "RelativeBal": True, #50% correlated   
-        "RelativeSample": True, #0% correlated
-        "RelativeStatEC": True, #0% correlated
-        "RelativeStatFSR": True, #0% correlated
-        "RelativeStatHF": True, #0% correlated
-        "SinglePionECAL": True, #100% correlated
-        "SinglePionHCAL": True, #100% correlated
-        "TimePtEta": True, #0% correlated
-        "SubTotalAbsolute": False,
-        "SubTotalMC": False,
-        "SubTotalPileUp": False,
-        "SubTotalPt": False,
-        "SubTotalRelative": False,
-        "SubTotalScale": False,
-        "Total": False,
-        "TotalNoFlavor": False,
-        "TotalNoFlavorNoTime": False,
-        "TotalNoTime": False,
-        "CorrelationGroupFlavor": False,
-        "CorrelationGroupIntercalibration": False,
-        "CorrelationGroupMPFInSitu": False,
-        "CorrelationGroupUncorrelated": False,
-        "CorrelationGroupbJES": False,
-        "Regrouped_Absolute": False,
-        f"Regrouped_Absolute_{jec_source_era}": False,
-        "Regrouped_BBEC1": False,
-        f"Regrouped_BBEC1_{jec_source_era}": False,
-        "Regrouped_EC2": False,
-        f"Regrouped_EC2_{jec_source_era}": False,
-        "Regrouped_FlavorQCD": False,
-        "Regrouped_HF": False,
-        f"Regrouped_HF_{jec_source_era}": False,
-        "Regrouped_RelativeBal": False,
-        f"Regrouped_RelativeSample_{jec_source_era}": False,
-        "Regrouped_Total": False,
+        "Regrouped_Absolute": True,
+        f"Regrouped_Absolute_{jec_source_era}": True,
+
+        "Regrouped_BBEC1": True,
+        f"Regrouped_BBEC1_{jec_source_era}": True,
+
+        "Regrouped_EC2": True,
+        f"Regrouped_EC2_{jec_source_era}": True,
+
+        "Regrouped_HF": True,
+        f"Regrouped_HF_{jec_source_era}": True,
+
+        "Regrouped_RelativeBal": True,
+        f"Regrouped_RelativeSample_{jec_source_era}": True,
+
+        "Regrouped_FlavorQCD": True,
     }
+    # all_jec_sources = {
+    #     "AbsoluteFlavMap": False, 
+    #     "AbsoluteMPFBias": True, #100% correlated
+    #     "AbsoluteSample": False,
+    #     "AbsoluteScale": True, #100% correlated
+    #     "AbsoluteStat": True, #0% correlated
+    #     "FlavorPhotonJet": False,
+    #     "FlavorPureBottom": False,
+    #     "FlavorPureCharm": False,
+    #     "FlavorPureGluon": False,
+    #     "FlavorPureQuark": False,
+    #     "FlavorQCD": True, #100% correlated
+    #     "FlavorZJet": False,
+    #     "Fragmentation": True, #100% correlated
+    #     "PileUpDataMC": True, #50% correlated
+    #     "PileUpEnvelope": False,
+    #     "PileUpMuZero": False,
+    #     "PileUpPtBB": True, #50% correlated
+    #     "PileUpPtEC1": True, #50% correlated
+    #     "PileUpPtEC2": True, #50% correlated
+    #     "PileUpPtHF": True, #50% correlated
+    #     "PileUpPtRef": True, #50% correlated
+    #     "RelativeFSR": True, #50% correlated
+    #     "RelativeJEREC1": True, #0% correlated
+    #     "RelativeJEREC2": True, #0% correlated
+    #     "RelativeJERHF": True, #50% correlated
+    #     "RelativePtBB": True, #50% correlated
+    #     "RelativePtEC1": True, #0% correlated
+    #     "RelativePtEC2": True, #0% correlated
+    #     "RelativePtHF": True, #50% correlated
+    #     "RelativeBal": True, #50% correlated   
+    #     "RelativeSample": True, #0% correlated
+    #     "RelativeStatEC": True, #0% correlated
+    #     "RelativeStatFSR": True, #0% correlated
+    #     "RelativeStatHF": True, #0% correlated
+    #     "SinglePionECAL": True, #100% correlated
+    #     "SinglePionHCAL": True, #100% correlated
+    #     "TimePtEta": True, #0% correlated
+    #     "SubTotalAbsolute": False,
+    #     "SubTotalMC": False,
+    #     "SubTotalPileUp": False,
+    #     "SubTotalPt": False,
+    #     "SubTotalRelative": False,
+    #     "SubTotalScale": False,
+    #     "Total": False,
+    #     "TotalNoFlavor": False,
+    #     "TotalNoFlavorNoTime": False,
+    #     "TotalNoTime": False,
+    #     "CorrelationGroupFlavor": False,
+    #     "CorrelationGroupIntercalibration": False,
+    #     "CorrelationGroupMPFInSitu": False,
+    #     "CorrelationGroupUncorrelated": False,
+    #     "CorrelationGroupbJES": False,
+    #     "Regrouped_Absolute": False,
+    #     f"Regrouped_Absolute_{jec_source_era}": False,
+    #     "Regrouped_BBEC1": False,
+    #     f"Regrouped_BBEC1_{jec_source_era}": False,
+    #     "Regrouped_EC2": False,
+    #     f"Regrouped_EC2_{jec_source_era}": False,
+    #     "Regrouped_FlavorQCD": False,
+    #     "Regrouped_HF": False,
+    #     f"Regrouped_HF_{jec_source_era}": False,
+    #     "Regrouped_RelativeBal": False,
+    #     f"Regrouped_RelativeSample_{jec_source_era}": False,
+    #     "Regrouped_Total": False,
+    # }
 
     cfg.x.jec = DotDict.wrap({
         "Jet": {
@@ -1298,7 +1317,7 @@ def add_run3(ana: od.Analysis,
 
     cfg.x.theory_uncertainty_processes = {
         "CMS_Scale_muR": (
-            "wj",
+            "wjets",
             "vv",
             "vvv",
             "st",
@@ -1309,7 +1328,7 @@ def add_run3(ana: od.Analysis,
             "bbphi_phitt_*",
         ),
         "CMS_Scale_muF": (
-            "wj",
+            "wjets",
             "vv",
             "vvv",
             "st",
@@ -1320,7 +1339,7 @@ def add_run3(ana: od.Analysis,
             "bbphi_phitt_*",
         ),
         "CMS_PS_ISR": (
-            "wj",
+            "wjets",
             "vv",
             "vvv",
             "st",
@@ -1331,7 +1350,7 @@ def add_run3(ana: od.Analysis,
             "bbphi_phitt_*",
         ),
         "CMS_PS_FSR": (
-            "wj",
+            "wjets",
             "vv",
             "vvv",
             "st",

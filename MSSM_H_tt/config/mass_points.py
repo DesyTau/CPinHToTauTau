@@ -47,7 +47,7 @@ def read_bdt_masses(path: str | Path | None = None) -> List[int]:
       seen.add(m)
   return uniq
 
-BDT_MASS_BLOCK_SIZE = 6
+BDT_MASS_BLOCK_SIZE = 0
 
 
 def get_bdt_mass_blocks(
@@ -56,18 +56,18 @@ def get_bdt_mass_blocks(
     if block_size is None:
         block_size = BDT_MASS_BLOCK_SIZE
 
-    if block_size <= 0:
-        raise ValueError(
-            f"BDT mass block size must be positive, got {block_size}"
-        )
-
     masses = tuple(read_bdt_masses())
+
+    # block size <= 0 means: process all configured masses together
+    if block_size <= 0 or block_size >= len(masses):
+        return (masses,)
 
     return tuple(
         tuple(masses[i:i + block_size])
         for i in range(0, len(masses), block_size)
     )
-    
+
+
 def get_bdt_mass_block(
     mass: int,
     block_size: int | None = None,
@@ -87,7 +87,12 @@ def get_bdt_mass_block(
 def get_bdt_mass_block_tag(
     masses,
 ) -> str:
-    return "M" + "_".join(str(int(m)) for m in masses)
+    masses = tuple(int(m) for m in masses)
+
+    if masses == tuple(read_bdt_masses()):
+        return "all"
+
+    return "M" + "_".join(str(m) for m in masses)
 
 
 def get_bdt_card_producer_name(

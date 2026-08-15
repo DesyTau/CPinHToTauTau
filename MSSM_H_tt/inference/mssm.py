@@ -38,15 +38,6 @@ BDT_CARD_VARIABLES = (
 #   block 2: 120, 125, 130, 135, 140, 160
 #   ...
 #
-
-
-def get_bdt_mass_blocks():
-    masses = list(read_bdt_masses())
-
-    return [
-        tuple(masses[i:i + BDT_HIST_MASS_BLOCK_SIZE])
-        for i in range(0, len(masses), BDT_HIST_MASS_BLOCK_SIZE)
-    ]
     
 class MSSM_model(HCPModelBase):
     """
@@ -170,7 +161,7 @@ class MSSM_model(HCPModelBase):
             if (
                 producer != "main"
                 and not producer.startswith(
-                    "bdt_card_M"
+                    "bdt_card_"
                 )
                 and producer != "main_common"
             )

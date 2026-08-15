@@ -310,16 +310,55 @@ def _build_bdt_feature_frame(events: ak.Array, channel: str):
     return features[BDT_FEATURES]
 
 
-def _eval_model_or_empty(evaluator, key, features, n_classes):
+def _normalize_model_output(
+    result,
+    n_classes,
+):
+    result = np.asarray(
+        result,
+        dtype=np.float32,
+    )
+
+    if result.ndim == 1:
+        result = result.reshape(
+            -1,
+            n_classes,
+        )
+
+    return np.ascontiguousarray(
+        result[:, :n_classes],
+    )
+
+
+def _eval_models_or_empty(
+    evaluator,
+    keys,
+    features,
+    n_classes,
+):
+    keys = tuple(keys)
+
     if len(features) == 0:
-        return np.empty((0, n_classes), dtype=np.float32)
+        return {
+            key: np.empty(
+                (0, n_classes),
+                dtype=np.float32,
+            )
+            for key in keys
+        }
 
-    res = np.asarray(evaluator(key, features), dtype=np.float32)
+    results = evaluator.evaluate_many(
+        keys,
+        features,
+    )
 
-    if res.ndim == 1:
-        res = res.reshape(-1, n_classes)
-
-    return res[:, :n_classes]
+    return {
+        key: _normalize_model_output(
+            results[key],
+            n_classes,
+        )
+        for key in keys
+    }
 
 
 # -------------------------------------------------------------------------
@@ -372,27 +411,78 @@ def mssm_bdt_score(
     n_classes = len(BDT_LABELS)
     eps = np.float32(1e-12)
 
+    # -------------------------------------------------------------------------
+    # Batch XGBoost evaluation
+    #
+    # Cross-application:
+    #
+    #   even-trained models -> odd events
+    #   odd-trained models  -> even events
+    #
+    # The important optimization is that each parity dataframe is transferred
+    # to the XGB subprocess only once.
+    # -------------------------------------------------------------------------
+
+    even_model_keys = tuple(
+        f"bdt_even_M{mass}"
+        for mass in self.mass_points
+    )
+
+    odd_model_keys = tuple(
+        f"bdt_odd_M{mass}"
+        for mass in self.mass_points
+    )
+
+    # One dataframe transfer:
+    #
+    #   features_odd -> all even-trained models
+    #
+    even_model_results_on_odd = _eval_models_or_empty(
+        self.evaluator,
+        even_model_keys,
+        features_odd,
+        n_classes,
+    )
+
+    # One dataframe transfer:
+    #
+    #   features_even -> all odd-trained models
+    #
+    odd_model_results_on_even = _eval_models_or_empty(
+        self.evaluator,
+        odd_model_keys,
+        features_even,
+        n_classes,
+    )
 
     for mass in self.mass_points:
         key_even = f"bdt_even_M{mass}"
         key_odd = f"bdt_odd_M{mass}"
 
-            # Cross-apply the parity models, matching the training script:
-            #   - even model was trained on even events and is applied to odd events
-            #   - odd model was trained on odd events and is applied to even events
-        res_even_model_on_odd = _eval_model_or_empty(
-                self.evaluator,
-                key_even,
-                features_odd,
-                n_classes,
-            )
-        res_odd_model_on_even = _eval_model_or_empty(
-                self.evaluator,
-                key_odd,
-                features_even,
-                n_classes,
-            )
+        res_even_model_on_odd = (
+            even_model_results_on_odd[
+                key_even
+            ]
+        )
 
+        res_odd_model_on_even = (
+            odd_model_results_on_even[
+                key_odd
+            ]
+        )
+
+        output = np.zeros(
+            (len(event_n), n_classes),
+            dtype=np.float32,
+        )
+
+        output[mask_even, :] = (
+            res_odd_model_on_even
+        )
+
+        output[~mask_even, :] = (
+            res_even_model_on_odd
+        )
         output = np.zeros((len(event_n), n_classes), dtype=np.float32)
         output[mask_even, :] = res_odd_model_on_even
         output[~mask_even, :] = res_even_model_on_odd
