@@ -1,14 +1,19 @@
 # coding: utf-8
+
 from __future__ import annotations
+
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from multiprocessing import Pipe, Process
-from multiprocessing.connection import Connection, wait
+from multiprocessing.connection import Connection
 
 from columnflow.types import Any
 
 
 STOP_SIGNAL = "STOP"
+EVALUATE_SIGNAL = "__XGB_EVALUATE__"
+EVALUATE_MANY_SIGNAL = "__XGB_EVALUATE_MANY__"
 ERROR_SIGNAL = "__XGB_EVALUATOR_ERROR__"
 
 
@@ -17,20 +22,29 @@ class XGBEvaluator:
     XGBoost model evaluator running in a separate process.
 
     Multiple models can be registered. The subprocess loads all registered
-    models once and then waits for evaluation requests through multiprocessing
-    pipes.
+    models once and then waits for evaluation requests through a single
+    multiprocessing pipe.
+
+    Two evaluation modes are supported:
+
+      - evaluate(name, features):
+          evaluate a single model
+
+      - evaluate_many(names, features):
+          serialize the features only once and evaluate all requested models
+          on the same deserialized object in the worker process
     """
 
     @dataclass
     class Model:
         name: str
         path: str
-        pipe: Connection | None = None
         signature_key: str = ""
 
     def __init__(self) -> None:
         self._models: dict[str, XGBEvaluator.Model] = {}
         self._p: Process | None = None
+        self._pipe: Connection | None = None
         self.silent = False
 
     def __enter__(self):
@@ -65,14 +79,15 @@ class XGBEvaluator:
         signature_key: str = "",
     ) -> None:
         if self._p is not None:
-            raise ValueError("cannot add models while evaluator process exists")
+            raise ValueError(
+                "cannot add models while evaluator process exists",
+            )
 
         if name in self._models:
             raise ValueError(
                 f"model with name '{name}' already exists",
             )
 
-        # Normalize path.
         path = str(path)
         path = os.path.expandvars(
             os.path.expanduser(path),
@@ -90,30 +105,27 @@ class XGBEvaluator:
             if self._p.is_alive():
                 raise ValueError("process already started")
 
-            # Clean up a stale process object.
             self.stop()
 
-        config = []
-        child_pipes = []
+        parent_pipe, child_pipe = Pipe()
 
-        for model in self._models.values():
-            parent_pipe, child_pipe = Pipe()
+        self._pipe = parent_pipe
 
-            model.pipe = parent_pipe
-            child_pipes.append(child_pipe)
-
-            config.append(
-                {
-                    "name": model.name,
-                    "path": model.path,
-                    "pipe": child_pipe,
-                    "signature_key": model.signature_key,
-                },
-            )
+        config = [
+            {
+                "name": model.name,
+                "path": model.path,
+                "signature_key": model.signature_key,
+            }
+            for model in self._models.values()
+        ]
 
         self._p = Process(
             target=_xgb_evaluate,
-            args=(config,),
+            args=(
+                config,
+                child_pipe,
+            ),
             kwargs={
                 "silent": self.silent,
             },
@@ -121,52 +133,36 @@ class XGBEvaluator:
 
         self._p.start()
 
-        # The parent process only uses the parent ends of the pipes.
-        # Closing these copies is important so that EOF is propagated
-        # correctly if the child process exits.
-        for child_pipe in child_pipes:
-            child_pipe.close()
+        # Only the subprocess uses the child side.
+        child_pipe.close()
 
-    def evaluate(
-        self,
-        name: str,
-        *args,
-        **kwargs,
-    ) -> Any:
+    def _check_running(self) -> None:
         if self._p is None:
             raise RuntimeError(
                 "XGB evaluator process has not been started",
             )
 
         if not self._p.is_alive():
-            exitcode = self._p.exitcode
-
             raise RuntimeError(
                 "XGB evaluator subprocess is not alive "
-                f"(exit code {exitcode})",
+                f"(exit code {self._p.exitcode})",
             )
 
-        if name not in self._models:
-            raise ValueError(
-                f"model with name '{name}' does not exist",
-            )
-
-        model = self._models[name]
-
-        if model.pipe is None:
+        if self._pipe is None:
             raise RuntimeError(
-                f"pipe for model '{name}' is not available",
+                "XGB evaluator communication pipe is not available",
             )
+
+    def _request(
+        self,
+        request: Any,
+        description: str,
+    ) -> Any:
+        self._check_running()
 
         try:
-            model.pipe.send(
-                (
-                    args,
-                    kwargs,
-                ),
-            )
-
-            result = model.pipe.recv()
+            self._pipe.send(request)
+            result = self._pipe.recv()
 
         except (
             BrokenPipeError,
@@ -181,11 +177,11 @@ class XGBEvaluator:
 
             raise RuntimeError(
                 f"communication with XGB evaluator failed for "
-                f"model '{name}' "
+                f"{description} "
                 f"(subprocess exit code {exitcode})",
             ) from exc
 
-        # Propagate exceptions raised inside the evaluator subprocess.
+        # Propagate exceptions raised in the evaluator subprocess.
         if (
             isinstance(result, tuple)
             and len(result) == 3
@@ -194,9 +190,89 @@ class XGBEvaluator:
             _, error_message, error_traceback = result
 
             raise RuntimeError(
-                f"XGB evaluation failed for model '{name}':\n"
+                f"XGB evaluation failed for {description}:\n"
                 f"{error_message}\n\n"
                 f"{error_traceback}",
+            )
+
+        return result
+
+    def evaluate(
+        self,
+        name: str,
+        *args,
+        **kwargs,
+    ) -> Any:
+        """
+        Evaluate a single registered model.
+        """
+        if name not in self._models:
+            raise ValueError(
+                f"model with name '{name}' does not exist",
+            )
+
+        return self._request(
+            (
+                EVALUATE_SIGNAL,
+                name,
+                args,
+                kwargs,
+            ),
+            description=f"model '{name}'",
+        )
+
+    def evaluate_many(
+        self,
+        model_names: Iterable[str],
+        *args,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """
+        Evaluate multiple registered models on the same input.
+
+        The input arguments are serialized through the multiprocessing pipe
+        exactly once. In the worker process, the same deserialized input object
+        is passed sequentially to every requested model.
+        """
+        model_names = tuple(model_names)
+
+        if not model_names:
+            return {}
+
+        if len(set(model_names)) != len(model_names):
+            raise ValueError(
+                "duplicate model names passed to evaluate_many",
+            )
+
+        missing = [
+            name
+            for name in model_names
+            if name not in self._models
+        ]
+
+        if missing:
+            raise ValueError(
+                "unknown model names passed to evaluate_many: "
+                + ", ".join(missing),
+            )
+
+        result = self._request(
+            (
+                EVALUATE_MANY_SIGNAL,
+                model_names,
+                args,
+                kwargs,
+            ),
+            description=(
+                f"{len(model_names)} models "
+                f"[{', '.join(model_names)}]"
+            ),
+        )
+
+        if not isinstance(result, dict):
+            raise RuntimeError(
+                "invalid result returned by evaluate_many: "
+                f"expected dict, got {type(result)}",
             )
 
         return result
@@ -206,45 +282,38 @@ class XGBEvaluator:
         timeout: float = 5,
     ) -> None:
         process = self._p
+        pipe = self._pipe
 
-        # Signal all models to stop when the subprocess is alive.
-        if process is not None and process.is_alive():
-            for model in self._models.values():
-                if model.pipe is None:
-                    continue
-
-                try:
-                    model.pipe.send(STOP_SIGNAL)
-
-                except (
-                    BrokenPipeError,
-                    EOFError,
-                    OSError,
-                ):
-                    # The subprocess might already have closed this pipe.
-                    pass
-
-        # Close all parent-side pipes.
-        for model in self._models.values():
-            if model.pipe is None:
-                continue
-
+        if (
+            process is not None
+            and process.is_alive()
+            and pipe is not None
+        ):
             try:
-                model.pipe.close()
+                pipe.send(STOP_SIGNAL)
+
+            except (
+                BrokenPipeError,
+                EOFError,
+                OSError,
+            ):
+                pass
+
+        if pipe is not None:
+            try:
+                pipe.close()
 
             except OSError:
                 pass
 
-            model.pipe = None
+        self._pipe = None
 
         if process is None:
             return
 
-        # Wait for graceful termination.
         if process.is_alive():
             process.join(timeout)
 
-        # Force termination when necessary.
         if process.is_alive():
             process.kill()
             process.join()
@@ -254,15 +323,18 @@ class XGBEvaluator:
 
 def _xgb_evaluate(
     config: list[dict[str, Any]],
+    pipe: Connection,
     *,
     silent: bool = False,
 ) -> None:
     """
     Worker process for XGBEvaluator.
 
-    Models are loaded exactly once when this process starts. The worker then
-    blocks in multiprocessing.connection.wait() until one of the registered
-    models receives either an evaluation request or a stop signal.
+    All models are loaded exactly once. Evaluation requests are received
+    through one control pipe.
+
+    For evaluate_many requests, the feature dataframe is deserialized once
+    and reused for all requested models.
     """
 
     import traceback
@@ -280,7 +352,6 @@ def _xgb_evaluate(
     class Model:
         name: str
         path: str
-        pipe: Connection
         signature_key: str = ""
         model: Any = None
 
@@ -292,7 +363,6 @@ def _xgb_evaluate(
             for attr in (
                 "name",
                 "path",
-                "pipe",
             ):
                 if attr not in model_config:
                     raise ValueError(
@@ -306,18 +376,9 @@ def _xgb_evaluate(
                     f"model file '{path}' does not exist",
                 )
 
-            pipe = model_config["pipe"]
-
-            if not isinstance(pipe, Connection):
-                raise TypeError(
-                    f"'pipe' {pipe} is not of type "
-                    f"'{Connection}'",
-                )
-
             return cls(
                 name=model_config["name"],
                 path=path,
-                pipe=pipe,
                 signature_key=model_config.get(
                     "signature_key",
                     "",
@@ -359,148 +420,130 @@ def _xgb_evaluate(
 
             self.model = None
 
-            try:
-                self.pipe.close()
-
-            except OSError:
-                pass
-
-    # ------------------------------------------------------------------
-    # Build and load models
-    # ------------------------------------------------------------------
-
     models = [
         Model.from_config(model_config)
         for model_config in config
     ]
 
-    try:
-        for model in models:
-            model.load()
-
-    except Exception:
-        # Make sure every pipe is closed if model loading fails.
-        for model in models:
-            try:
-                model.pipe.close()
-            except OSError:
-                pass
-
-        raise
-
-    # Map each pipe directly to its model. This allows wait() to block until
-    # any model has work available without polling or sleeping.
-    active_models = {
-        model.pipe: model
+    models_by_name = {
+        model.name: model
         for model in models
     }
 
-    def remove_model(
-        pipe: Connection,
-    ) -> None:
-        model = active_models.pop(
-            pipe,
-            None,
-        )
-
-        if model is not None:
-            model.clear()
-
-    def shutdown() -> None:
-        for pipe in list(active_models):
-            remove_model(pipe)
-
-    # ------------------------------------------------------------------
-    # Evaluation loop
-    # ------------------------------------------------------------------
-
     try:
-        while active_models:
-            ready_pipes = wait(
-                list(active_models),
-            )
+        # Load each model exactly once.
+        for model in models:
+            model.load()
 
-            for pipe in ready_pipes:
-                if pipe not in active_models:
-                    continue
+        while True:
+            try:
+                data = pipe.recv()
 
-                model = active_models[pipe]
+            except (
+                EOFError,
+                OSError,
+            ):
+                break
 
-                try:
-                    data = pipe.recv()
+            if data == STOP_SIGNAL:
+                break
 
-                except (
-                    EOFError,
-                    OSError,
-                ):
-                    remove_model(pipe)
-                    continue
-
-                # ------------------------------------------------------
-                # Evaluation request
-                # ------------------------------------------------------
-
+            try:
                 if (
                     isinstance(data, tuple)
-                    and len(data) == 2
+                    and len(data) == 4
+                    and data[0] == EVALUATE_SIGNAL
                 ):
-                    args, kwargs = data
+                    _, model_name, args, kwargs = data
 
-                    try:
-                        result = model.evaluate(
+                    if model_name not in models_by_name:
+                        raise ValueError(
+                            f"unknown model '{model_name}'",
+                        )
+
+                    result = models_by_name[
+                        model_name
+                    ].evaluate(
+                        *args,
+                        **kwargs,
+                    )
+
+                elif (
+                    isinstance(data, tuple)
+                    and len(data) == 4
+                    and data[0] == EVALUATE_MANY_SIGNAL
+                ):
+                    _, model_names, args, kwargs = data
+
+                    missing = [
+                        name
+                        for name in model_names
+                        if name not in models_by_name
+                    ]
+
+                    if missing:
+                        raise ValueError(
+                            "unknown models in batch request: "
+                            + ", ".join(missing),
+                        )
+
+                    # IMPORTANT:
+                    #
+                    # args/kwargs have been deserialized only once above.
+                    # Every model evaluates the exact same input object.
+                    result = {
+                        model_name: models_by_name[
+                            model_name
+                        ].evaluate(
                             *args,
                             **kwargs,
                         )
-
-                    except Exception as exc:
-                        error_traceback = traceback.format_exc()
-
-                        try:
-                            pipe.send(
-                                (
-                                    ERROR_SIGNAL,
-                                    repr(exc),
-                                    error_traceback,
-                                ),
-                            )
-
-                        except (
-                            BrokenPipeError,
-                            EOFError,
-                            OSError,
-                        ):
-                            pass
-
-                        # Evaluation errors are treated as fatal since the
-                        # corresponding ProduceColumns task must fail.
-                        raise
-
-                    try:
-                        pipe.send(result)
-
-                    except (
-                        BrokenPipeError,
-                        EOFError,
-                        OSError,
-                    ):
-                        remove_model(pipe)
-
-                # ------------------------------------------------------
-                # Stop request
-                # ------------------------------------------------------
-
-                elif data == STOP_SIGNAL:
-                    remove_model(pipe)
-
-                # ------------------------------------------------------
-                # Invalid request
-                # ------------------------------------------------------
+                        for model_name in model_names
+                    }
 
                 else:
                     raise ValueError(
-                        f"received invalid data for model "
-                        f"'{model.name}': {data}",
+                        f"received invalid XGB evaluator request: {data}",
                     )
 
+            except Exception as exc:
+                error_traceback = traceback.format_exc()
+
+                try:
+                    pipe.send(
+                        (
+                            ERROR_SIGNAL,
+                            repr(exc),
+                            error_traceback,
+                        ),
+                    )
+
+                except (
+                    BrokenPipeError,
+                    EOFError,
+                    OSError,
+                ):
+                    pass
+
+                # A prediction error should fail ProduceColumns.
+                raise
+
+            try:
+                pipe.send(result)
+
+            except (
+                BrokenPipeError,
+                EOFError,
+                OSError,
+            ):
+                break
+
     finally:
-        shutdown()
+        for model in models:
+            model.clear()
+
+        try:
+            pipe.close()
+
+        except OSError:
+            pass
