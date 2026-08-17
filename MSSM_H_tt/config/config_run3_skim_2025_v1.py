@@ -30,6 +30,10 @@ def add_run3(ana: od.Analysis,
              config_id             = None,
              limit_dataset_files   = None,) -> od.Config :
 
+    from MSSM_H_tt.config.mass_points import (
+        read_bdt_masses,
+        expand_bdt_histogram_variables,
+    )
     # get all root processes
     procs = get_root_processes_from_campaign(campaign)
     
@@ -43,7 +47,32 @@ def add_run3(ana: od.Analysis,
     cfg.x.year = campaign.x.year
     cfg.x.tag = campaign.x.tag
     year = cfg.x.year
+    # function to expand histogram variables for BDTs
+    cfg.x.histogram_variable_expander = (
+        expand_bdt_histogram_variables
+        )  
+    cfg.x.histogram_weight_shift_sources = {
+        "muon_weight",
+        "electron_weight",
+        "Trigger_SF_weight",
+        "pu_weight",
+        "top_pt_weight",
+        "zpt_weight",
 
+        "CMS_PS_ISR",
+        "CMS_PS_FSR",
+        "CMS_Scale_muR",
+        "CMS_Scale_muF",
+
+        "btag_weight_hf",
+        "btag_weight_lf",
+        "btag_weight_hfstats1",
+        "btag_weight_hfstats2",
+        "btag_weight_lfstats1",
+        "btag_weight_lfstats2",
+        "btag_weight_cferr1",
+        "btag_weight_cferr2",
+    }
     # validations
     if campaign.x.year == 2022:
         assert campaign.x.tag in ["preEE", "postEE"]
@@ -174,7 +203,6 @@ def add_run3(ana: od.Analysis,
         "zzz"
         ]
 
-    from MSSM_H_tt.config.mass_points import read_bdt_masses
     MASS_POINTS = read_bdt_masses()
 
     for mass in MASS_POINTS:
@@ -1212,8 +1240,8 @@ def add_run3(ana: od.Analysis,
     cfg.add_shift(name="pu_weight_up", id=17, type="shape")
     add_shift_aliases(cfg,"pu_weight",{"pu_weight": "pu_weight_{direction}"})
     
-    cfg.add_shift(name="unclustered_up", id=18, type="shape", tags={"met"})
-    cfg.add_shift(name="unclustered_down", id=19, type="shape", tags={"met"})
+    cfg.add_shift(name="unclustered_up", id=18, type="shape", tags={"met", "bdt_input"})
+    cfg.add_shift(name="unclustered_down", id=19, type="shape", tags={"met", "bdt_input"})
 
     add_shift_aliases(
         cfg,
@@ -1235,14 +1263,14 @@ def add_run3(ana: od.Analysis,
             name=f"jec_{jec_source}_up",
             id=5000 + 2 * i,
             type="shape",
-            tags={"jec"},
+            tags={"jec","bdt_input"},
             aux={"jec_source": jec_source},
         )
         cfg.add_shift(
             name=f"jec_{jec_source}_down",
             id=5001 + 2 * i,
             type="shape",
-            tags={"jec"},
+            tags={"jec","bdt_input"},
             aux={"jec_source": jec_source},
         )
         add_shift_aliases(
@@ -1266,8 +1294,8 @@ def add_run3(ana: od.Analysis,
         #         },
         #     )
 
-    cfg.add_shift(name="jer_up", id=6000, type="shape", tags={"jer"})
-    cfg.add_shift(name="jer_down", id=6001, type="shape", tags={"jer"})
+    cfg.add_shift(name="jer_up", id=6000, type="shape", tags={"jer", "bdt_input"})
+    cfg.add_shift(name="jer_down", id=6001, type="shape", tags={"jer", "bdt_input"})
     add_shift_aliases(
         cfg,
         "jer",
@@ -1381,8 +1409,8 @@ def add_run3(ana: od.Analysis,
             f"btag_weight_{unc}",
             {"btag_weight": f"btag_weight_{unc}_{{direction}}"},
         )
-    cfg.add_shift(name="recoilresp_up", id=7000, type="shape", tags={"met_recoil"})
-    cfg.add_shift(name="recoilresp_down", id=7001, type="shape", tags={"met_recoil"})
+    cfg.add_shift(name="recoilresp_up", id=7000, type="shape", tags={"met_recoil", "bdt_input"})
+    cfg.add_shift(name="recoilresp_down", id=7001, type="shape", tags={"met_recoil", "bdt_input"})
     add_shift_aliases(
         cfg,
         "recoilresp",
@@ -1392,8 +1420,8 @@ def add_run3(ana: od.Analysis,
         },
     )
 
-    cfg.add_shift(name="recoilres_up", id=7002, type="shape", tags={"met_recoil"})
-    cfg.add_shift(name="recoilres_down", id=7003, type="shape", tags={"met_recoil"})
+    cfg.add_shift(name="recoilres_up", id=7002, type="shape", tags={"met_recoil", "bdt_input"})
+    cfg.add_shift(name="recoilres_down", id=7003, type="shape", tags={"met_recoil", "bdt_input"})
     add_shift_aliases(
         cfg,
         "recoilres",

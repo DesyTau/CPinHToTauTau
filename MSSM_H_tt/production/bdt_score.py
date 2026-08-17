@@ -65,6 +65,7 @@ from MSSM_H_tt.config.mass_points import (
     read_bdt_masses,
     get_bdt_mass_blocks,
     get_bdt_mass_block_tag,
+    get_bdt_masses_for_dataset,
 )
 
 MASS_POINTS = tuple(read_bdt_masses())
@@ -471,18 +472,6 @@ def mssm_bdt_score(
             ]
         )
 
-        output = np.zeros(
-            (len(event_n), n_classes),
-            dtype=np.float32,
-        )
-
-        output[mask_even, :] = (
-            res_odd_model_on_even
-        )
-
-        output[~mask_even, :] = (
-            res_even_model_on_odd
-        )
         output = np.zeros((len(event_n), n_classes), dtype=np.float32)
         output[mask_even, :] = res_odd_model_on_even
         output[~mask_even, :] = res_even_model_on_odd
@@ -494,8 +483,6 @@ def mssm_bdt_score(
         p_sig = p_ggphi + p_bbphi
 
         # Four analysis regions: argmax(P_ggphi, P_bbphi, P_DY, P_TT).
-        bdt_cat = np.argmax(output, axis=1).astype(np.int32)
-
         dy_penalty, tt_penalty = self.bdt_best_dsig_penalties.get(
                 int(mass),
                 (1.0, 1.0),
@@ -591,7 +578,26 @@ def mssm_bdt_score_setup(
     # IMPORTANT: load models only once for the complete ProduceColumns task
     self.evaluator.start()
 
+@mssm_bdt_score.init
+def mssm_bdt_score_init(
+    self: Producer,
+    **kwargs,
+):
+    self.mass_points = (
+        get_bdt_masses_for_dataset(
+            self.dataset_inst,
+            self.mass_points,
+        )
+    )
 
+    self.produces = (
+        _bdt_score_output_columns(
+            self.mass_points,
+            self.discriminants,
+            produce_bdt_cat=self.produce_bdt_cat,
+        )
+    )
+    
 @mssm_bdt_score.teardown
 def mssm_bdt_score_teardown(self: Producer, **kwargs) -> None:
     """

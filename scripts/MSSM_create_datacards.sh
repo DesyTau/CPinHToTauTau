@@ -101,8 +101,8 @@ fi
 # Recreate only the histogram layer and the final datacards.
 # ----------------------------------------------------------------------
 
-upstream_version=dust_dev
-hist_version=dust_dev
+upstream_version=bdt_allmass_test_v1
+hist_version=bdt_allmass_test_v1
 # version="dust_dev"
 # Sparse polling by default.
 poll_interval="${POLL_INTERVAL:-5m}"

@@ -8,6 +8,7 @@ from columnflow.production import (
 from MSSM_H_tt.config.mass_points import (
     get_bdt_mass_blocks,
     get_bdt_mass_block_tag,
+    get_bdt_masses_for_dataset,
 )
 
 from MSSM_H_tt.production.bdt_score import (
@@ -101,13 +102,39 @@ def _make_bdt_card_producer(block):
         self: Producer,
         **kwargs,
     ):
-        # Only shifts that can alter the BDT input
-        # kinematics need a new BDT evaluation.
+        # -------------------------------------------------------------
+        # Restrict signal samples to their own BDT mass.
+        # Backgrounds and data keep the entire mass block.
+        # -------------------------------------------------------------
+
+        self.mass_points = (
+            get_bdt_masses_for_dataset(
+                self.dataset_inst,
+                self.mass_points,
+            )
+        )
+
+        self.produces = (
+            _card_output_columns(
+                self.mass_points
+            )
+        )
+
+        # -------------------------------------------------------------
+        # Only shifts affecting BDT input kinematics require
+        # reevaluation.
+        # -------------------------------------------------------------
+
         self.shifts |= {
             shift_inst.name
             for shift_inst in self.config_inst.shifts
             if shift_inst.has_tag(
-                ("jec", "jer", "met", "met_recoil")
+                (
+                    "jec",
+                    "jer",
+                    "met",
+                    "met_recoil",
+                )
             )
         }
 

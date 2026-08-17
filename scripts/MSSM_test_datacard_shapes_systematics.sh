@@ -1,96 +1,149 @@
 #!/bin/bash
 set -euo pipefail
 
+source ./common_run3_MSSM.sh
 
-# ============================================================================
-# Limited systematic test of the four MSSM datacard distributions.
-#
-# Uses one file per dataset through the "_limited" config.
-# ============================================================================
+set_common_vars "$1"
 
-config="run3_2022_preEE_emu_limited"
-mass=100
+version="${TEST_VERSION:-datacard_shapes_batch_xgb_test}"
 
-upstream_version="${UPSTREAM_VERSION:-dust_dev}"
-test_version="${TEST_VERSION:-datacard_shapes_test}"
-
-workflow="${WORKFLOW:-htcondor}"
-poll_interval="${POLL_INTERVAL:-5m}"
-workers="${WORKERS:-15}"
-pilot="${PILOT:-True}"
-
-# M100 is in this block.
-producers="main_common,bdt_card_M90_95_100_105_110_115"
+extra_args=("${@:2}")
 
 
 # ============================================================================
-# LIMITED SAMPLE
+# Mass points
+# ============================================================================
+
+mapfile -t masses < <(
+    python - <<'PY'
+from MSSM_H_tt.config.mass_points import read_bdt_masses
+
+for mass in read_bdt_masses():
+    print(mass)
+PY
+)
+
+
+# ============================================================================
+# JEC sources
+# ============================================================================
+
+# Common across eras
+jec_sources=(
+    jec_Regrouped_Absolute
+    jec_Regrouped_BBEC1
+    jec_Regrouped_EC2
+    jec_Regrouped_HF
+    jec_Regrouped_RelativeBal
+    jec_Regrouped_FlavorQCD
+)
+
+# Add the era-dependent sources needed by all requested configs.
+IFS=',' read -ra config_list <<< "$config"
+
+for cfg in "${config_list[@]}"; do
+
+    case "$cfg" in
+        *2022_preEE*)
+            jec_era="2022"
+            ;;
+        *2022_postEE*)
+            jec_era="2022EE"
+            ;;
+        *2023_preBPix*)
+            jec_era="2023"
+            ;;
+        *2023_postBPix*)
+            jec_era="2023BPix"
+            ;;
+        *)
+            echo "ERROR: cannot determine JEC era from config: $cfg"
+            exit 1
+            ;;
+    esac
+
+    jec_sources+=(
+        "jec_Regrouped_Absolute_${jec_era}"
+        "jec_Regrouped_BBEC1_${jec_era}"
+        "jec_Regrouped_EC2_${jec_era}"
+        "jec_Regrouped_HF_${jec_era}"
+        "jec_Regrouped_RelativeSample_${jec_era}"
+    )
+
+done
+
+
+# ============================================================================
+# All systematic sources
+# ============================================================================
+
+shift_sources=(
+    muon_weight
+    electron_weight
+    Trigger_SF_weight
+    pu_weight
+    top_pt_weight
+    zpt_weight
+
+    unclustered
+    recoilresp
+    recoilres
+
+    CMS_PS_ISR
+    CMS_PS_FSR
+    CMS_Scale_muR
+    CMS_Scale_muF
+
+    btag_weight_hf
+    btag_weight_lf
+    btag_weight_hfstats1
+    btag_weight_hfstats2
+    btag_weight_lfstats1
+    btag_weight_lfstats2
+    btag_weight_cferr1
+    btag_weight_cferr2
+
+    "${jec_sources[@]}"
+
+    jer
+)
+
+shift_sources_csv=$(IFS=,; echo "${shift_sources[*]}")
+
+
+# ============================================================================
+# Common arguments
+# ============================================================================
+
+common_args=(
+    --configs "$config"
+    --processes "$processes"
+    --datasets "$datasets"
+
+    --version "$version"
+
+    --shift-sources "$shift_sources_csv"
+
+    --producers "main_common,bdt_card_all"
+
+    --file-types png
+    --general-settings "cms-label=pw,yscale=log"
+
+    --workflow htcondor
+    --poll-interval 5m
+    --pilot True
+
+    "${extra_args[@]}"
+)
+
+
+# ============================================================================
+# Plot function
 #
 # IMPORTANT:
-# use actual config process names, not process-group names such as "wj".
+# only one category is given to each call, so there is no unwanted
+# category x variable Cartesian product.
 # ============================================================================
-
-datasets=(
-    "TTto2L2Nu"
-    "DYto2Tau_MLL_50_0J_amcatnloFXFX"
-    "DYto2L_M_50_0J_amcatnloFXFX"
-    "ggphi_phitt_100"
-    "bbphi_phitt_100"
-)
-
-processes=(
-    "tt_dl"
-    "dy_tt_m50_0j"
-    "dy_ll_m50_0j"
-    "ggphi_phitt_100"
-    "bbphi_phitt_100"
-)
-
-datasets_csv=$(IFS=,; echo "${datasets[*]}")
-processes_csv=$(IFS=,; echo "${processes[*]}")
-
-
-# ============================================================================
-# SYSTEMATICS
-#
-# Start with a representative set.
-#
-# This tests:
-#   - event-weight propagation
-#   - lepton SFs
-#   - b tagging
-#   - MET-dependent BDT response
-#   - jet-dependent BDT response
-#   - recoil-dependent BDT response
-# ============================================================================
-
-shift_sources="${SHIFT_SOURCES:-\
-jec_TimePtEta_up,\
-jec_TimePtEta_down,\
-jer,\
-}"
-
-
-# ============================================================================
-# Versions
-# ============================================================================
-
-upstream_tasks=(
-    cf.CalibrateEvents
-    cf.SelectEvents
-    cf.ReduceEvents
-    cf.MergeReducedEvents
-    cf.MergeSelectionStats
-    cf.ProvideReducedEvents
-)
-
-test_tasks=(
-    cf.ProduceColumns
-    cf.CreateHistograms
-    cf.MergeHistograms
-    cf.MergeShiftedHistograms
-)
-
 
 run_plot() {
 
@@ -99,105 +152,62 @@ run_plot() {
 
     echo
     echo "======================================================================"
-    echo "[test] Category : $category"
-    echo "[test] Variables: $variables"
-    echo "[test] Datasets : $datasets_csv"
-    echo "[test] Processes: $processes_csv"
-    echo "[test] Shifts   : $shift_sources"
+    echo "Category : $category"
+    echo "Variables: $variables"
     echo "======================================================================"
     echo
 
-    args=(
-        --configs "$config"
-
-        --version "$test_version"
-
-        --datasets "$datasets_csv"
-        --processes "$processes_csv"
-
-        --categories "$category"
+    law run cf.PlotShiftedVariables1D \
+        "${common_args[@]}" \
+        --categories "$category" \
         --variables "$variables"
-
-        --shift-sources "$shift_sources"
-
-        --producers "$producers"
-
-        --workflow "$workflow"
-        --poll-interval "$poll_interval"
-        --pilot "$pilot"
-    )
-
-
-    # Reuse reduced events.
-    for task in "${upstream_tasks[@]}"; do
-        args+=(
-            "--${task}-version" "$upstream_version"
-            "--${task}-workflow" "$workflow"
-            "--${task}-poll-interval" "$poll_interval"
-            "--${task}-pilot" "$pilot"
-        )
-    done
-
-
-    # Recreate BDT columns + histograms.
-    for task in "${test_tasks[@]}"; do
-        args+=(
-            "--${task}-version" "$test_version"
-            "--${task}-workflow" "$workflow"
-            "--${task}-poll-interval" "$poll_interval"
-            "--${task}-pilot" "$pilot"
-        )
-    done
-
-
-    echo "law run cf.PlotShiftedVariablesPerShift1D \\"
-    printf '  %q ' "${args[@]}"
-    echo "--workers $workers"
-    echo
-
-    law run cf.PlotShiftedVariablesPerShift1D \
-        "${args[@]}" \
-        --workers "$workers"
 }
 
 
 # ============================================================================
-# 1. ggphi signal datacard variable
+# Produce exactly the distributions required for every mass
 # ============================================================================
 
-run_plot \
-    "cat_emu_sr__bdt_ggphi_and_bbphi_M${mass}" \
-    "bdt_D_sig_vs_Disc_ggphi_M${mass}"
+for mass in "${masses[@]}"; do
+
+    echo
+    echo "######################################################################"
+    echo "Mass hypothesis: M${mass}"
+    echo "######################################################################"
 
 
-# ============================================================================
-# 2. bbphi signal datacard variable
-# ============================================================================
+    # ------------------------------------------------------------------------
+    # Signal-like category
+    #
+    # Only:
+    #   D_sig vs Disc_ggphi
+    #   D_sig vs Disc_bbphi
+    # ------------------------------------------------------------------------
 
-run_plot \
-    "cat_emu_sr__bdt_ggphi_and_bbphi_M${mass}" \
-    "bdt_D_sig_vs_Disc_bbphi_M${mass}"
-
-
-# ============================================================================
-# 3. DY-region datacard variable
-# ============================================================================
-
-run_plot \
-    "cat_emu_sr__bdt_dy_M${mass}" \
-    "bdt_D_DY_M${mass}"
+    run_plot \
+        "cat_emu_sr__bdt_ggphi_and_bbphi_M${mass}" \
+        "bdt_D_sig_vs_Disc_ggphi_M${mass},bdt_D_sig_vs_Disc_bbphi_M${mass}"
 
 
-# ============================================================================
-# 4. tt-region datacard variable
-# ============================================================================
+    # ------------------------------------------------------------------------
+    # DY category
+    #
+    # Only D_DY
+    # ------------------------------------------------------------------------
 
-run_plot \
-    "cat_emu_sr__bdt_tt_M${mass}" \
-    "bdt_D_TT_M${mass}"
+    run_plot \
+        "cat_emu_sr__bdt_dy_M${mass}" \
+        "bdt_D_DY_M${mass}"
 
 
-echo
-echo "======================================================================"
-echo "[done] Limited systematic datacard-distribution test completed."
-echo "======================================================================"
+    # ------------------------------------------------------------------------
+    # TT category
+    #
+    # Only D_TT
+    # ------------------------------------------------------------------------
+
+    run_plot \
+        "cat_emu_sr__bdt_tt_M${mass}" \
+        "bdt_D_TT_M${mass}"
+
+done

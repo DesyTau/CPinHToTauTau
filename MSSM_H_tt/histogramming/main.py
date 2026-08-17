@@ -16,89 +16,313 @@ from columnflow.util import maybe_import, pattern_matcher
 from columnflow.columnar_util import EMPTY_FLOAT
 from columnflow.types import Any
 import warnings
+import re
 np = maybe_import('numpy')
 ak = maybe_import('awkward')
 hist = maybe_import('hist')
 
-@cf_default.hist_producer(keep_weights=None,
-                          skip_compatibility_check=True, 
-                          drop_weights={"normalization_weight_inclusive"})
-def httcp_hist_producer(self: HistProducer, events: ak.Array, **kwargs) -> ak.Array:
-    print('Invoking httcp hist producer')
+_BDT_CARD_VARIABLE_RE = re.compile(
+    r"^bdt_"
+    r"(D_sig_vs_Disc_ggphi|"
+    r"D_sig_vs_Disc_bbphi|"
+    r"D_DY|"
+    r"D_TT)"
+    r"_M[0-9]+$"
+)
 
-    processes = self.dataset_inst.processes.names()
+
+def _category_uses_variables(
+    category: od.Category,
+    variables: list[od.Variable],
+) -> bool:
+    """
+    Restrict final BDT datacard variables to categories that explicitly
+    declare them in aux['fit_var'].
+
+    Non-BDT/datacard variables retain the previous behavior.
+    """
+
+    card_variables = {
+        variable.name
+        for variable in variables
+        if _BDT_CARD_VARIABLE_RE.match(
+            variable.name
+        )
+    }
+
+    # Preserve the old behavior for all ordinary/diagnostic variables.
+    if not card_variables:
+        return True
+
+    fit_variables = category.aux.get(
+        "fit_var",
+        [],
+    )
+
+    if isinstance(
+        fit_variables,
+        str,
+    ):
+        fit_variables = [
+            fit_variables,
+        ]
+
+    fit_variables = set(
+        fit_variables
+    )
+
+    return card_variables.issubset(
+        fit_variables
+    )
     
-    weight = ak.Array(np.ones(len(events), dtype=np.float32))
+def _skip_weight_for_dataset(
+    self: HistProducer,
+    weight_name: str,
+) -> bool:
 
-    _stitch_allow = set(self.config_inst.x.stitch_samples)
+    dataset_name = getattr(
+        self.dataset_inst,
+        "name",
+        "",
+    )
 
-    _dataset_name = getattr(self.dataset_inst, "name", "")
+    if (
+        weight_name == "top_pt_weight"
+        and not self.dataset_inst.has_tag("ttbar")
+    ):
+        return True
 
-    for column in self.weight_columns:
-        # keep your existing skip rule for top_pt_weight
-        if ((self.dataset_inst.has_tag("ttbar") ^ True) & (column == 'top_pt_weight')):
-            print("===")
-            print(weight)
-            print(Route(column).apply(events), column)
-            print("Skipping top_pt_weight for:", _dataset_name)
-            print(weight)
-            print("===")
-            continue
+    if (
+        weight_name == "stitching_weight"
+        and dataset_name not in set(
+            self.config_inst.x.stitch_samples
+        )
+    ):
+        return True
 
-        # NEW: only apply stitching_weights to the selected samples
-        if column == 'stitching_weight' and _dataset_name not in _stitch_allow:
-            print("===")
-            print(weight)
-            print(Route(column).apply(events), column)
-            print("Skipping stitching_weight for:", _dataset_name)
-            print(weight)
-            print("===")
-            continue
-        # --- END NEW ---
-        # default: apply the weight
-        print("======")
-        print(weight)
-        weight = weight * Route(column).apply(events)
-        print(column, Route(column).apply(events), column)
-        print(weight)
-        print("======")
-    if 'ggphi_phitt' in self.dataset_inst.name:
-        weight = ak.where(weight<10,weight,ak.mean(weight))
-    weight_dict = {}
-    weight_dict['nominal'] = weight
-    # weight_dict['tf_wj'] = weight * events.ff_weight_wj_nominal
-    # weight_dict['tf_qcd'] = weight * events.ff_weight_qcd_nominal
+    return False
+@cf_default.hist_producer(
+    keep_weights=None,
+    skip_compatibility_check=True,
+    drop_weights={"normalization_weight_inclusive"},
+)
+def httcp_hist_producer(
+    self: HistProducer,
+    events: ak.Array,
+    task: law.Task,
+    **kwargs,
+) -> ak.Array:
+
+    def build_weight(replacements=None):
+
+        replacements = replacements or {}
+
+        weight = ak.Array(
+            np.ones(
+                len(events),
+                dtype=np.float32,
+            )
+        )
+
+        for column in self.weight_columns:
+
+            route = replacements.get(
+                column,
+                column,
+            )
+
+            weight = (
+                weight
+                * Route(route).apply(events)
+            )
+
+        if "ggphi_phitt" in self.dataset_inst.name:
+            weight = ak.where(
+                weight < 10,
+                weight,
+                ak.mean(weight),
+            )
+
+        return weight
+
+    # nominal event weight
+    nominal_weight = build_weight()
+
+    weight_dict = {
+        "nominal": nominal_weight,
+    }
+
+    # Only the nominal kinematic task embeds all weight variations.
+    #
+    # For JEC/JER/MET/etc. tasks, continue filling just that
+    # particular kinematic shift with nominal event weights.
+    if (
+        self.dataset_inst.is_mc
+        and task.global_shift_inst.name == "nominal"
+    ):
+
+        for (
+            shift_name,
+            replacements,
+        ) in self.embedded_weight_shift_columns.items():
+
+            weight_dict[shift_name] = build_weight(
+                replacements
+            )
+
     return events, weight_dict
 
 @httcp_hist_producer.init
-def httcp_hist_init(self: HistProducer) -> None:
-    self.weight_columns = set()
-    do_keep = pattern_matcher(self.keep_weights) if self.keep_weights else lambda _, /: True
-    do_drop = pattern_matcher(self.drop_weights) if self.drop_weights else lambda _, /: False
-    all_weights = self.config_inst.x.event_weights.copy()
-    all_weights.update(self.dataset_inst.x('event_weights', {}))
-    
-    # for the_weight in self.config_inst.x.fake_factor_method.columns:
-    #     self.uses.add(the_weight + '*')
-        
-    if self.dataset_inst.is_data: pass
-    else: 
-        for weight_name, shift_insts in all_weights.items():
-            if not do_keep(weight_name) or do_drop(weight_name):
+def httcp_hist_init(
+    self: HistProducer,
+) -> None:
+
+    self.weight_columns = []
+
+    # Maps:
+    #
+    #   muon_weight_up:
+    #       {"muon_weight": "muon_weight_up"}
+    #
+    # etc.
+    self.embedded_weight_shift_columns = {}
+
+    do_keep = (
+        pattern_matcher(self.keep_weights)
+        if self.keep_weights
+        else lambda _, /: True
+    )
+
+    do_drop = (
+        pattern_matcher(self.drop_weights)
+        if self.drop_weights
+        else lambda _, /: False
+    )
+
+    if self.dataset_inst.is_data:
+        return
+
+    all_weights = (
+        self.config_inst.x.event_weights.copy()
+    )
+
+    all_weights.update(
+        self.dataset_inst.x(
+            "event_weights",
+            {},
+        )
+    )
+
+    embedded_sources = set(
+        self.config_inst.x(
+            "histogram_weight_shift_sources",
+            (),
+        )
+    )
+
+    for (
+        weight_name,
+        shift_insts,
+    ) in all_weights.items():
+
+        if (
+            not do_keep(weight_name)
+            or do_drop(weight_name)
+        ):
+            continue
+
+        skip_weight = _skip_weight_for_dataset(
+            self,
+            weight_name,
+        )
+
+        # Only nominally applied weights belong here.
+        if not skip_weight:
+            self.weight_columns.append(
+                weight_name
+            )
+
+            self.uses.add(
+                weight_name
+            )
+
+        self.shifts |= {
+            shift_inst.name
+            for shift_inst in shift_insts
+        }
+
+        for shift_inst in shift_insts:
+
+            if (
+                shift_inst.source
+                not in embedded_sources
+            ):
                 continue
-            self.weight_columns.add(weight_name)
-            self.uses.add(weight_name)
-            self.shifts |= {shift_inst.name for shift_inst in shift_insts}
+
+            replacements = {}
+
+            # When the nominal weight itself is skipped
+            # (e.g. top_pt_weight outside ttbar), retain
+            # an up/down histogram identical to nominal.
+            if not skip_weight:
+
+                aliases = shift_inst.x(
+                    "column_aliases",
+                    {},
+                )
+
+                shifted_column = aliases.get(
+                    weight_name
+                )
+
+                if shifted_column is None:
+                    raise RuntimeError(
+                        f"no shifted column alias found for "
+                        f"weight '{weight_name}' and shift "
+                        f"'{shift_inst.name}'"
+                    )
+
+                replacements[weight_name] = shifted_column
+
+                self.uses.add(shifted_column)
+
+            self.embedded_weight_shift_columns[shift_inst.name] = replacements
 
 @httcp_hist_producer.create_hist
-def httcp_create_hist(self: HistProducer, variables: list[od.Variable], task: law.Task, **kwargs) -> dict:
+def httcp_create_hist(
+    self: HistProducer,
+    variables: list[od.Variable],
+    task: law.Task,
+    **kwargs,
+) -> dict:
     """
-    Define the histogram structure for the default histogram producer.
-    Returns a dictionary of hist.Histogram objects keyed by category.
+    Define histograms only for categories that use the requested
+    final BDT datacard variable.
+
+    Ordinary variables retain the original all-category behavior.
     """
+
     histograms = {}
-    for category in self.config_inst.categories.names():
-        histograms[category] = create_hist_from_variables(*variables, categorical_axes=(('category', 'intcat'),('process', 'intcat'), ('shift', 'intcat')), weight=True)
+
+    for category in self.config_inst.categories:
+        if not _category_uses_variables(
+            category,
+            variables,
+        ):
+            continue
+
+        histograms[
+            category.name
+        ] = create_hist_from_variables(
+            *variables,
+            categorical_axes=(
+                ("category", "intcat"),
+                ("process", "intcat"),
+                ("shift", "intcat"),
+            ),
+            weight=True,
+        )
+
     return histograms
 
 @httcp_hist_producer.fill_hist
@@ -110,66 +334,113 @@ def httcp_fill_hist(
     events: ak.Array,
     task: law.Task,
 ) -> None:
-    """
-    Fill the histogram with the data.
-    """
 
     for cat_name in self.config_inst.categories.names():
-        cat = self.config_inst.get_category(cat_name)
 
-        fill_data = {}
+        cat = self.config_inst.get_category(
+            cat_name
+        )
 
-        # Event weight
-        if "apply_ff" not in cat.aux:
-            fill_data["weight"] = data["weight"]["nominal"]
-
-        elif cat.aux["apply_ff"] == "wj":
-            print(
-                f"including TF weights: ff_weight_wj_nominal, "
-                f"category: {cat.name}"
-            )
-            fill_data["weight"] = data["weight"]["tf_wj"]
-
-        elif cat.aux["apply_ff"] == "qcd":
-            print(
-                f"applying FF weights: ff_weight_qcd_nominal, "
-                f"category: {cat.name}"
-            )
-            fill_data["weight"] = data["weight"]["tf_qcd"]
-
-        # Category mask
         mask = ak.any(
             data["category"] == cat.id,
             axis=1,
         )
 
-        fill_data["weight"] = fill_data["weight"][mask]
+        # Ordinary categories:
+        # fill nominal plus all embedded weight shifts.
+        if "apply_ff" not in cat.aux:
 
-        fill_data["category"] = ak.full_like(
-            fill_data["weight"],
-            cat.id,
-            dtype=np.int32,
-        )
+            weights_to_fill = (
+                data["weight"]
+            )
 
-        fill_data["shift"] = ak.full_like(
-            fill_data["weight"],
-            data["shift"],
-            dtype=np.int32,
-        )
+        elif cat.aux["apply_ff"] == "wj":
 
-        fill_data["process"] = data["process"][mask]
+            weights_to_fill = {
+                "nominal": data["weight"]["tf_wj"],
+            }
 
-        # Fill all requested variable axes.
-        for variable_inst in variables:
-            var_name = variable_inst.name
-            fill_data[var_name] = data[var_name][mask]
+        elif cat.aux["apply_ff"] == "qcd":
 
-        fill_hist(
-            h[cat.name],
-            fill_data,
-            last_edge_inclusive=task.last_edge_inclusive,
-        )
+            weights_to_fill = {
+                "nominal": data["weight"]["tf_qcd"],
+            }
 
+        else:
+            weights_to_fill = {
+                "nominal":
+                    data["weight"]["nominal"],
+            }
+
+        for (
+            weight_shift_name,
+            event_weight,
+        ) in weights_to_fill.items():
+
+            fill_data = {}
+
+            masked_weight = event_weight[mask]
+
+            fill_data["weight"] = (
+                masked_weight
+            )
+
+            fill_data["category"] = (
+                ak.full_like(
+                    masked_weight,
+                    cat.id,
+                    dtype=np.int32,
+                )
+            )
+
+            # "nominal" means the kinematic shift of
+            # this CreateHistograms task.
+            #
+            # For the nominal task this is shift 0.
+            # For a JEC/JER task it is that JEC/JER id.
+            if weight_shift_name == "nominal":
+
+                shift_id = data["shift"]
+
+            else:
+
+                shift_id = (
+                    self.config_inst
+                    .get_shift(
+                        weight_shift_name
+                    )
+                    .id
+                )
+
+            fill_data["shift"] = (
+                ak.full_like(
+                    masked_weight,
+                    shift_id,
+                    dtype=np.int32,
+                )
+            )
+
+            fill_data["process"] = (
+                data["process"][mask]
+            )
+
+            for variable_inst in variables:
+
+                var_name = (
+                    variable_inst.name
+                )
+
+                fill_data[var_name] = (
+                    data[var_name][mask]
+                )
+
+            fill_hist(
+                h[cat.name],
+                fill_data,
+                last_edge_inclusive=(
+                    task.last_edge_inclusive
+                ),
+            )
 @httcp_hist_producer.post_process_hist
 def default_post_process_hist(
     self: HistProducer,
@@ -210,9 +481,14 @@ def default_post_process_hist(
         )
 
     if "shift" in axis_names:
+
         shift_map = {
-            task.global_shift_inst.id:
-                task.global_shift_inst.name
+            int(shift_id):
+                self.config_inst
+                .get_shift(int(shift_id))
+                .name
+            for shift_id
+            in h_merged.axes["shift"]
         }
 
         h_merged = translate_hist_intcat_to_strcat(

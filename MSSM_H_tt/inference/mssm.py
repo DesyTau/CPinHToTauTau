@@ -14,6 +14,7 @@ from MSSM_H_tt.config.mass_points import (
     read_bdt_masses,
     get_bdt_mass_block,
     get_bdt_card_producer_name,
+    get_bdt_masses_for_dataset,
 )
 
 
@@ -31,7 +32,7 @@ BDT_CARD_VARIABLES = (
 
 # Number of neighbouring mass points whose histograms are produced together.
 #
-# With the current mass list and block size 6:
+# With the current mass list and block size:
 #
 #   block 0: 60, 65, 70, 75, 80, 85
 #   block 1: 90, 95, 100, 105, 110, 115
@@ -50,7 +51,7 @@ class MSSM_model(HCPModelBase):
         For any final MSSM BDT datacard variable, return the complete set
         of datacard variables belonging to the same mass block.
 
-        Example for block size 6:
+        Example for block size:
 
             bdt_D_DY_M100
 
@@ -174,6 +175,56 @@ class MSSM_model(HCPModelBase):
                 bdt_producer,
             ]
         )
+    def get_hist_requirement_variables_for_dataset(
+        self,
+        variables: set[str],
+        dataset_inst,
+        ) -> set[str]:
+
+        active_masses = (
+            get_bdt_masses_for_dataset(
+                dataset_inst,
+                read_bdt_masses(),
+            )
+        )
+
+        # Background/data:
+        # preserve all-mass histogram grouping.
+        if len(active_masses) > 1:
+            return self.get_hist_requirement_variables(
+                variables
+            )
+
+        # Signal:
+        # only its corresponding mass is allowed.
+        signal_mass = active_masses[0]
+
+        for variable in variables:
+            match = re.match(
+                r"^bdt_"
+                r"(D_sig_vs_Disc_ggphi|"
+                r"D_sig_vs_Disc_bbphi|"
+                r"D_DY|D_TT)"
+                r"_M([0-9]+)$",
+                variable,
+            )
+
+            if match:
+                requested_mass = int(
+                    match.group(2)
+                )
+
+                if requested_mass != signal_mass:
+                    raise RuntimeError(
+                        f"signal dataset "
+                        f"'{dataset_inst.name}' corresponds "
+                        f"to M{signal_mass}, but histogram "
+                        f"'{variable}' requests M"
+                        f"{requested_mass}"
+                    )
+
+        # No expansion for signal samples.
+        return set(variables)
 
     name = "MSSM_model"
     add_qcd = True

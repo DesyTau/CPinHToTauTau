@@ -39,8 +39,8 @@ from MSSM_H_tt.config.mass_points import (
     read_bdt_masses,
     get_bdt_mass_blocks,
     get_bdt_mass_block_tag,
+    get_bdt_masses_for_dataset,
 )
-
 
 ak = maybe_import("awkward")
 
@@ -602,4 +602,25 @@ for block in get_bdt_mass_blocks():
     globals()[cls_name] = producer_cls
     BDT_2D_CARD_BLOCK_PRODUCERS[block] = (
         producer_cls
+    )
+@bdt_2d_variables.init
+def bdt_2d_variables_init(
+    self: Producer,
+    **kwargs,
+):
+    self.mass_points = (
+        get_bdt_masses_for_dataset(
+            self.dataset_inst,
+            self.mass_points,
+        )
+    )
+
+    self.uses = _bdt_2d_input_columns(
+        self.mass_points,
+        self.bdt_2d_pairs,
+    )
+
+    self.produces = _bdt_2d_output_columns(
+        self.mass_points,
+        self.bdt_2d_pairs,
     )

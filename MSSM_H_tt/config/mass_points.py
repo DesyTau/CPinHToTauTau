@@ -5,7 +5,64 @@ from pathlib import Path
 from functools import lru_cache
 from typing import Iterable, List
 from columnflow.util import maybe_import
+import re
 
+_SIGNAL_DATASET_MASS_RE = re.compile(
+    r"^(?:ggphi|bbphi)_phitt_([0-9]+)$"
+)
+
+
+def get_bdt_masses_for_dataset(
+    dataset_inst,
+    masses=None,
+) -> tuple[int, ...]:
+    """
+    Return the BDT masses that should be evaluated for a dataset.
+
+    Backgrounds and data:
+        all requested masses
+
+    MSSM signal:
+        only the mass corresponding to the signal dataset
+
+    Examples:
+        bbphi_phitt_100 -> (100,)
+        ggphi_phitt_100 -> (100,)
+        DY...           -> all masses
+        data...         -> all masses
+    """
+
+    if masses is None:
+        masses = read_bdt_masses()
+
+    masses = tuple(
+        int(mass)
+        for mass in masses
+    )
+
+    if dataset_inst is None:
+        return masses
+
+    match = _SIGNAL_DATASET_MASS_RE.match(
+        dataset_inst.name
+    )
+
+    if not match:
+        return masses
+
+    signal_mass = int(
+        match.group(1)
+    )
+
+    if signal_mass not in masses:
+        raise ValueError(
+            f"signal dataset '{dataset_inst.name}' "
+            f"has mass {signal_mass}, but this mass is not "
+            f"contained in the requested BDT masses {masses}"
+        )
+
+    return (signal_mass,)
+  
 @lru_cache(maxsize=1)
 def read_bdt_masses(path: str | Path | None = None) -> List[int]:
   """
@@ -82,7 +139,61 @@ def get_bdt_mass_block(
         f"Mass {mass} not found in configured BDT masses "
         f"{read_bdt_masses()}"
     )
+BDT_CARD_HIST_VARIABLES = (
+    "D_sig_vs_Disc_ggphi",
+    "D_sig_vs_Disc_bbphi",
+    "D_DY",
+    "D_TT",
+)
 
+_BDT_CARD_HIST_VARIABLE_RE = re.compile(
+    r"^bdt_"
+    r"(D_sig_vs_Disc_ggphi|"
+    r"D_sig_vs_Disc_bbphi|"
+    r"D_DY|D_TT)"
+    r"_M([0-9]+)$"
+)
+
+
+def expand_bdt_histogram_variables(
+    variables,
+) -> tuple[str, ...]:
+    """
+    Expand any BDT datacard variable to the complete histogram block
+    containing that mass.
+
+    With BDT_MASS_BLOCK_SIZE = 0, requesting any single BDT variable
+    expands to the four datacard variables for all configured masses.
+    """
+
+    expanded = []
+    seen = set()
+
+    def add(variable):
+        if variable not in seen:
+            expanded.append(variable)
+            seen.add(variable)
+
+    for variable in variables:
+
+        match = _BDT_CARD_HIST_VARIABLE_RE.match(variable)
+
+        # Ordinary variables are not modified.
+        if not match:
+            add(variable)
+            continue
+
+        mass = int(match.group(2))
+
+        block = get_bdt_mass_block(mass)
+
+        for block_mass in block:
+            for discriminant in BDT_CARD_HIST_VARIABLES:
+                add(
+                    f"bdt_{discriminant}_M{block_mass}"
+                )
+
+    return tuple(expanded)
 
 def get_bdt_mass_block_tag(
     masses,
