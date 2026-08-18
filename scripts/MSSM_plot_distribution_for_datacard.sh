@@ -16,8 +16,8 @@ if [[ -z "$1" ]]; then
     echo "  22and23_emu"
     echo "  22_emu"
     echo "  22EE_emu"
-    echo "  23preBPix_emu"
-    echo "  23postBPix_emu"
+    echo "  23_emu"
+    echo "  23BPix_emu"
     exit 1
 fi
 
@@ -28,40 +28,12 @@ fi
 extra_args=("${@:2}")
 
 # -------------------------------------------------------------------------
-# Read all BDT mass points directly from the analysis YAML
+# Analysis channel
 #
-# This avoids duplicating the list here and keeps this script automatically
-# synchronized with:
-#
-#   MSSM_H_tt/config/bdt_masses.yaml
+# All currently supported configurations in this script are e-mu.
 # -------------------------------------------------------------------------
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-mass_file="${REPO_DIR}/MSSM_H_tt/config/bdt_masses.yaml"
-
-if [[ ! -f "$mass_file" ]]; then
-    echo "ERROR: mass file not found:"
-    echo "  $mass_file"
-    exit 1
-fi
-
-mapfile -t masses < <(
-    awk '
-        /^[[:space:]]*-[[:space:]]*[0-9]+[[:space:]]*$/ {
-            print $2
-        }
-    ' "$mass_file"
-)
-
-if [[ ${#masses[@]} -eq 0 ]]; then
-    echo "ERROR: no BDT masses found in $mass_file"
-    exit 1
-fi
-
-echo "Found ${#masses[@]} BDT mass points:"
-echo "${masses[*]}"
+channel="emu"
 
 
 # -------------------------------------------------------------------------
@@ -69,6 +41,8 @@ echo "${masses[*]}"
 #
 # Category:
 #   cat_emu_sr
+#
+# These are passed to PlotDatacardDistributions as the inclusive variables.
 # -------------------------------------------------------------------------
 
 variables_emu_list=(
@@ -113,11 +87,11 @@ variables_emu_list=(
     # "hcand_emu_fastMTT_mass"
 )
 
-# Convert bash array to comma-separated string
 variables_emu="$(
     IFS=,
     echo "${variables_emu_list[*]}"
 )"
+
 
 # ============================================================================
 # JEC sources
@@ -167,6 +141,7 @@ for cfg in "${config_list[@]}"; do
 
 done
 
+
 # ============================================================================
 # All systematic sources
 # ============================================================================
@@ -203,163 +178,112 @@ shift_sources=(
 )
 
 shift_sources_csv=$(IFS=,; echo "${shift_sources[*]}")
-# -------------------------------------------------------------------------
-# Common plotting function
-# -------------------------------------------------------------------------
-
-run_plot() {
-
-    local mass="$1"
-    local region="$2"
-    local category="$3"
-    local variables="$4"
-
-    args=(
-        --configs "$config"
-        --processes "$processes"
-        --datasets "$datasets"
-        --version "$version"
-
-        --categories "$category"
-        --variables "$variables"
-
-        --shift-sources "$shift_sources_csv"
-
-        --file-types "png"
-
-        --general-settings "cms-label=pw"
-        --hist-hooks "qcd"
-        --workflow "htcondor"
-        --workers "100"
-        --bypass-branch-requirements "True"
-        --poll-interval "5m"
-        --pilot "True"
-
-        "${extra_args[@]}"
-    )
-
-    echo
-    echo "======================================================================"
-
-    if [[ "$mass" == "inclusive" ]]; then
-        echo "Mass:      inclusive"
-    else
-        echo "Mass:      M${mass}"
-    fi
-
-    echo "Region:    ${region}"
-    echo "Category:  ${category}"
-    echo "Variables: ${variables}"
-    echo "Version: ${version}"
-    echo "======================================================================"
-    echo
-
-    echo law run cf.PlotShiftedVariables1D "${args[@]}"
-
-    law run cf.PlotShiftedVariables1D "${args[@]}"
-
-    status=$?
-
-    if [[ $status -ne 0 ]]; then
-        echo
-        echo "ERROR:"
-
-        if [[ "$mass" == "inclusive" ]]; then
-            echo "Plotting failed for inclusive SR"
-        else
-            echo "Plotting failed for M${mass}, region ${region}"
-        fi
-
-        echo
-        exit $status
-    fi
-}
 
 
 # -------------------------------------------------------------------------
-# Plot standard e-mu variables in the inclusive signal region
+# Sanity checks
 #
-# Category:
-#   cat_emu_sr
+# These prevent accidentally starting the wrapper with empty arguments,
+# which would otherwise make ColumnFlow resolve defaults or fail later
+# during shift-source resolution.
+# -------------------------------------------------------------------------
+
+if [[ -z "$config" ]]; then
+    echo "ERROR: config is empty"
+    exit 1
+fi
+
+if [[ -z "$processes" ]]; then
+    echo "ERROR: processes is empty"
+    exit 1
+fi
+
+if [[ -z "$datasets" ]]; then
+    echo "ERROR: datasets is empty"
+    exit 1
+fi
+
+if [[ -z "$shift_sources_csv" ]]; then
+    echo "ERROR: shift_sources_csv is empty"
+    exit 1
+fi
+
+
+# -------------------------------------------------------------------------
+# Schedule all plots in one LAW / Luigi graph
 #
-# These variables are independent of the BDT mass hypothesis, so they are
-# plotted only once rather than once for every BDT mass.
+# PlotDatacardDistributions creates:
+#
+#   - one inclusive SR plot task
+#
+#   - for every configured BDT mass:
+#       * merged ggphi + bbphi signal-region plot task
+#       * DY-region plot task
+#       * TT-region plot task
+#
+# All child PlotShiftedVariables1D tasks are therefore known to Luigi
+# simultaneously. Identical upstream histogram requirements can consequently
+# be represented by the same task node instead of being rediscovered by
+# separate `law run` invocations.
+#
+# The BDT mass list itself is read by the Python task from:
+#
+#   MSSM_H_tt/config/bdt_masses.yaml
+#
+# through read_bdt_masses(), so the mass list is not duplicated here.
 # -------------------------------------------------------------------------
 
-run_plot \
-    "inclusive" \
-    "SR" \
-    "cat_emu_sr" \
-    "$variables_emu"
+args=(
+    --channel "$channel"
+
+    --configs "$config"
+    --processes "$processes"
+    --datasets "$datasets"
+    --version "$version"
+    --include-inclusive "True"
+    --inclusive-variables "$variables_emu"
+
+    --shift-sources "$shift_sources_csv"
+
+    --file-types "png"
+
+    --general-settings "cms-label=pw"
+    --hist-hooks "qcd"
+
+    --workflow "htcondor"
+    --workers "8"
+    --bypass-branch-requirements "True"
+    --poll-interval "5m"
+    --pilot "True"
+
+    "${extra_args[@]}"
+)
 
 
-# -------------------------------------------------------------------------
-# Loop over all mass hypotheses
-# -------------------------------------------------------------------------
+echo
+echo "======================================================================"
+echo "MSSM datacard distribution production"
+echo "======================================================================"
+echo "Configuration option: $1"
+echo "Configs:              $config"
+echo "Channel:              $channel"
+echo "Version:              $version"
+echo "Inclusive variables:  $variables_emu"
+echo
+echo "All BDT mass hypotheses will be scheduled in one Luigi graph."
+echo "======================================================================"
+echo
 
-for mass in "${masses[@]}"; do
+echo law run MSSM_H_tt.PlotDatacardDistributions "${args[@]}"
+echo
 
-    # ---------------------------------------------------------------------
-    # Merged signal region
-    #
-    # Category:
-    #   cat_emu_sr__bdt_ggphi_and_bbphi_M{mass}
-    #
-    # Datacard variables:
-    #   bdt_D_sig_vs_Disc_ggphi_M{mass}
-    #   bdt_D_sig_vs_Disc_bbphi_M{mass}
-    # ---------------------------------------------------------------------
+law run MSSM_H_tt.PlotDatacardDistributions "${args[@]}"
 
-    signal_category="cat_emu_sr__bdt_ggphi_and_bbphi_M${mass}"
+status=$?
 
-    signal_variables="bdt_D_sig_vs_Disc_ggphi_M${mass},bdt_D_sig_vs_Disc_bbphi_M${mass}"
-
-    run_plot \
-        "$mass" \
-        "signal" \
-        "$signal_category" \
-        "$signal_variables"
-
-
-    # ---------------------------------------------------------------------
-    # DY region
-    #
-    # Category:
-    #   cat_emu_sr__bdt_dy_M{mass}
-    #
-    # Datacard variable:
-    #   bdt_D_DY_M{mass}
-    # ---------------------------------------------------------------------
-
-    dy_category="cat_emu_sr__bdt_dy_M${mass}"
-
-    dy_variable="bdt_D_DY_M${mass}"
-
-    run_plot \
-        "$mass" \
-        "DY" \
-        "$dy_category" \
-        "$dy_variable"
-
-
-    # ---------------------------------------------------------------------
-    # TT region
-    #
-    # Category:
-    #   cat_emu_sr__bdt_tt_M{mass}
-    #
-    # Datacard variable:
-    #   bdt_D_TT_M{mass}
-    # ---------------------------------------------------------------------
-
-    tt_category="cat_emu_sr__bdt_tt_M${mass}"
-
-    tt_variable="bdt_D_TT_M${mass}"
-
-    run_plot \
-        "$mass" \
-        "TT" \
-        "$tt_category" \
-        "$tt_variable"
-
-done
+if [[ $status -ne 0 ]]; then
+    echo
+    echo "ERROR: datacard distribution production failed"
+    echo
+    exit $status
+fi
