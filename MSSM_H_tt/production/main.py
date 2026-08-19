@@ -2,9 +2,11 @@
 Column production methods related to higher-level features.
 """
 import functools
+import re
 
 from columnflow.production import Producer, producer
 from columnflow.production.categories import category_ids
+from MSSM_H_tt.production.category_ids import mssm_category_ids
 from columnflow.production.normalization import normalization_weights
 from columnflow.production.cms.mc_weight import mc_weight
 from columnflow.reduction.util import create_collections_from_masks
@@ -38,6 +40,8 @@ from MSSM_H_tt.production.stitching_weights import stitching_weight
 from MSSM_H_tt.production.unclustered_met import unclustered_met, add_unclustered_to_recoilcorrmet
 from MSSM_H_tt.production.theor_weight import theor_unc
 from MSSM_H_tt.production.bdt_2d_bins import bdt_2d_variables
+from MSSM_H_tt.config.mass_points import get_bdt_masses_for_dataset
+
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
 coffea = maybe_import("coffea")
@@ -394,13 +398,13 @@ def main_common_init(self: Producer) -> None:
         main_common,
         mssm_bdt_score,
         bdt_2d_variables,
-        category_ids,
+        mssm_category_ids,
     },
     produces={
         main_common,
         mssm_bdt_score,
         bdt_2d_variables,
-        category_ids,
+        mssm_category_ids,
     },
     produce_weights=True,
 )
@@ -418,21 +422,21 @@ def main(
         events,
         **kwargs,
     )
-    print("Producing mssm_bdt_score...")
 
+    print("Producing mssm_bdt_score...")
     events = self[mssm_bdt_score](
         events,
         **kwargs,
     )
-    
+
     print("Producing bdt_2d_variables...")
     events = self[bdt_2d_variables](
         events,
         **kwargs,
     )
-    
+
     print("Producing category_ids...")
-    events = self[category_ids](
+    events = self[mssm_category_ids](
         events,
         **kwargs,
     )

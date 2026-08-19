@@ -150,9 +150,9 @@ def add_categories(config: od.Config,
         #                     'aux'       : {'apply_ff': ''}},
         # "ar_yields"      : {'selection' : ["lep_iso", "os_charge"],},
         #categories for QCD estimation via classic ABCD method 
-        "abcd_ar"       : { 'selection' : ["lep_iso", "ss_charge","D_zeta_cut"], 'label' : "same sign region"},
-        "abcd_dr_num"   : { 'selection' : ["lep_inv_iso", "os_charge","D_zeta_cut"]},
-        "abcd_dr_den"   : { 'selection' : ["lep_inv_iso", "ss_charge","D_zeta_cut"]},
+        "abcd_ar"       : { 'selection' : ["lep_iso", "ss_charge"], 'label' : "same sign region"},
+        "abcd_dr_num"   : { 'selection' : ["lep_inv_iso", "os_charge"]},
+        "abcd_dr_den"   : { 'selection' : ["lep_inv_iso", "ss_charge"]},
         
         # "sr_no_mt"      : { 'selection' : ["lep_iso", "os_charge"],
         #                     'label'     : "signal region no mt",

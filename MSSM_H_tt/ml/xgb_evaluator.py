@@ -398,7 +398,7 @@ def _xgb_evaluate(
                 f"from {self.path} ...",
             )
 
-            self.model = xgb.XGBClassifier()
+            self.model = xgb.XGBClassifier(n_jobs=1)
             self.model.load_model(self.path)
 
             _print("done")

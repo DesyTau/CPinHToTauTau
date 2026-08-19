@@ -51,7 +51,6 @@ from columnflow.production import Producer, producer
 logger = law.logger.get_logger(__name__)
 
 np = maybe_import("numpy")
-pd = maybe_import("pandas")
 ak = maybe_import("awkward")
 
 set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
@@ -279,36 +278,131 @@ def _clip_if_enabled_n_bjets(values: np.ndarray) -> np.ndarray:
 # Feature construction
 # -------------------------------------------------------------------------
 
-def _build_bdt_feature_frame(events: ak.Array, channel: str):
+def _build_bdt_feature_array(
+    events: ak.Array,
+    channel: str,
+) -> np.ndarray:
     """
-    Build the exact feature frame used by the 10-feature BDT training script.
+    Build the exact 10-feature BDT input matrix.
+
+    Column order must match BDT_FEATURES.
     """
-    hcand = events[f"hcand_{channel}"]
 
-    n_bjets = _flat_first_existing(events, ["n_bjets", "N_b_jets"])
-    n_bjets = _clip_if_enabled_n_bjets(n_bjets)
+    n_bjets = _flat_first_existing(
+        events,
+        [
+            "n_bjets",
+            "N_b_jets",
+        ],
+    )
 
-    features_dict = {
-        "n_bjets": n_bjets,
-        "delta_eta_jj": _flat_first_existing(events, ["delta_eta_jj", "dijet.deltaeta"]),
-        "mt_tot": _flat_first_existing(events, ["mt_tot", f"hcand_{channel}.mt_tot"]),
-        "fastMTT": _flat_first_existing(events, ["fastMTT", f"hcand_{channel}.fastMTT.mass"], axis=1),
-        "pt_lead_b_jet": _flat_first_existing(events, ["pt_lead_b_jet", "lead_b_jet.pt"]),
-        "eta_lead_b_jet": _flat_first_existing(events, ["eta_lead_b_jet", "lead_b_jet.eta"]),
-        "eta_sublead_jet": _flat_first_existing(events, ["eta_sublead_jet", "sublead_jet.eta"]),
-        "pt_sublead_jet": _flat_first_existing(events, ["pt_sublead_jet", "sublead_jet.pt"]),
-        "m_vis": _flat_first_existing(events, ["m_vis", f"hcand_{channel}.mass"]),
-        "D_zeta": _flat_first_existing(events, ["D_zeta"]),
-    }
+    n_bjets = (
+        _clip_if_enabled_n_bjets(
+            n_bjets
+        )
+    )
 
-    features = pd.DataFrame.from_dict(features_dict)
-    features = features.replace([np.inf, -np.inf], np.nan)
+    feature_columns = (
+        n_bjets,
 
-    missing = [f for f in BDT_FEATURES if f not in features.columns]
-    if missing:
-        raise RuntimeError("Missing BDT input features: " + ", ".join(missing))
+        _flat_first_existing(
+            events,
+            [
+                "delta_eta_jj",
+                "dijet.deltaeta",
+            ],
+        ),
 
-    return features[BDT_FEATURES]
+        _flat_first_existing(
+            events,
+            [
+                "mt_tot",
+                f"hcand_{channel}.mt_tot",
+            ],
+        ),
+
+        _flat_first_existing(
+            events,
+            [
+                "fastMTT",
+                f"hcand_{channel}.fastMTT.mass",
+            ],
+            axis=1,
+        ),
+
+        _flat_first_existing(
+            events,
+            [
+                "pt_lead_b_jet",
+                "lead_b_jet.pt",
+            ],
+        ),
+
+        _flat_first_existing(
+            events,
+            [
+                "eta_lead_b_jet",
+                "lead_b_jet.eta",
+            ],
+        ),
+
+        _flat_first_existing(
+            events,
+            [
+                "eta_sublead_jet",
+                "sublead_jet.eta",
+            ],
+        ),
+
+        _flat_first_existing(
+            events,
+            [
+                "pt_sublead_jet",
+                "sublead_jet.pt",
+            ],
+        ),
+
+        _flat_first_existing(
+            events,
+            [
+                "m_vis",
+                f"hcand_{channel}.mass",
+            ],
+        ),
+
+        _flat_first_existing(
+            events,
+            [
+                "D_zeta",
+            ],
+        ),
+    )
+
+    features = np.column_stack(
+        feature_columns
+    ).astype(
+        np.float32,
+        copy=False,
+    )
+
+    features[
+        ~np.isfinite(features)
+    ] = np.nan
+
+    if (
+        features.ndim != 2
+        or features.shape[1]
+        != len(BDT_FEATURES)
+    ):
+        raise RuntimeError(
+            "invalid BDT feature matrix shape: "
+            f"{features.shape}; expected "
+            f"(n_events, {len(BDT_FEATURES)})"
+        )
+
+    return np.ascontiguousarray(
+        features
+    )
 
 
 def _normalize_model_output(
@@ -402,12 +496,30 @@ def mssm_bdt_score(
     channel = self.config_inst.channels.names()[0]
     event_n = flat_np_view(events.event)
 
-    features = _build_bdt_feature_frame(events, channel)
-    features.index = event_n
+    features = _build_bdt_feature_array(
+        events,
+        channel,
+    )
 
-    mask_even = (event_n % 2 == 0)
-    features_even = features.loc[mask_even]
-    features_odd = features.loc[~mask_even]
+    mask_even = (
+        event_n % 2 == 0
+    )
+
+    features_even = (
+        np.ascontiguousarray(
+            features[
+                mask_even
+            ]
+        )
+    )
+
+    features_odd = (
+        np.ascontiguousarray(
+            features[
+                ~mask_even
+            ]
+        )
+    )
 
     n_classes = len(BDT_LABELS)
     eps = np.float32(1e-12)
