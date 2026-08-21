@@ -5,7 +5,25 @@ set -euo pipefail
 
 # =============================================================================
 # Usage
+#   ./MSSM_submit_stage_nopoll.sh 22_emu getdatasets
+#   ./MSSM_submit_stage_nopoll.sh 22_emu calibrate
+#   ./MSSM_submit_stage_nopoll.sh 22_emu select
+#   ./MSSM_submit_stage_nopoll.sh 22_emu selection_stats
+#   ./MSSM_submit_stage_nopoll.sh 22_emu reduce
+#   ./MSSM_submit_stage_nopoll.sh 22_emu reduction_stats
+#   ./MSSM_submit_stage_nopoll.sh 22_emu merge_reduced
+#   ./MSSM_submit_stage_nopoll.sh 22_emu produce
+#   ./MSSM_submit_stage_nopoll.sh 22_emu create_hists
+#   ./MSSM_submit_stage_nopoll.sh 22_emu merge_hists
+#   ./MSSM_submit_stage_nopoll.sh 22_emu merge_shifted
+#
+# IMPORTANT:
+#   Wait for the previous stage to FINISH before submitting the next one.
+#
+#   After selection is finished, selection_stats and reduce are independent
+#   and can be submitted one after the other without waiting between them.
 # =============================================================================
+
 
 if [[ $# -ne 2 ]]; then
     echo "Usage:"
@@ -16,32 +34,32 @@ if [[ $# -ne 2 ]]; then
     echo "  22EE_emu"
     echo "  23_emu"
     echo "  23BPix_emu"
-    echo "  22and23_emu"
     echo
     echo "Stages:"
     echo "  calibrate"
     echo "  select"
-    echo "  selection-stats"
+    echo "  selection_stats"
     echo "  reduce"
-    echo "  reduction-stats"
-    echo "  merge-reduced"
+    echo "  reduction_stats"
+    echo "  merge_reduced"
     echo "  produce"
-    echo "  create-histograms"
-    echo "  merge-histograms"
-    echo "  merge-shifted-histograms"
+    echo "  create_hists"
+    echo "  merge_hists"
+    echo "  merge_shifted"
     exit 1
 fi
+
 
 configuration_option="$1"
 stage="$2"
 
 
 # =============================================================================
-# Setup
+# Load common configuration
 # =============================================================================
 
 script_dir="$(
-    cd "$(dirname "${BASH_SOURCE[0]}")" &&
+    cd "$(dirname "${BASH_SOURCE[0]}")"
     pwd
 )"
 
@@ -51,30 +69,86 @@ set_common_vars "$configuration_option"
 
 
 # =============================================================================
-# Local submission settings
-#
-# Only one Luigi worker and one submission thread are used on lxplus.
-#
-# parallel_jobs=0 means unlimited on the LAW remote workflow side, i.e. submit
-# all branches of the current dataset during this invocation.
-#
-# Since we process only ONE dataset per law invocation, this does not create
-# the huge Luigi graph that caused the segfault.
+# Determine the JEC era
 # =============================================================================
 
-workers="${WORKERS:-1}"
-submission_threads="${SUBMISSION_THREADS:-1}"
-parallel_jobs="${PARALLEL_JOBS:-0}"
+case "$configuration_option" in
+
+    22_emu)
+        jec_era="2022"
+        ;;
+
+    22EE_emu)
+        jec_era="2022EE"
+        ;;
+
+    23_emu)
+        jec_era="2023"
+        ;;
+
+    23BPix_emu)
+        jec_era="2023BPix"
+        ;;
+
+    *)
+        echo "ERROR: unsupported configuration:"
+        echo "  $configuration_option"
+        echo
+        echo "For no-poll staged production, run each era separately."
+        exit 2
+        ;;
+esac
 
 
 # =============================================================================
-# Histogram variables
+# Local controller settings
+# =============================================================================
+#
+# Only a few Luigi workers are necessary. With --no-poll, they submit one
+# remote workflow and then become available for another dataset.
+#
+# parallel_jobs must be sufficiently large so that a single remote workflow
+# is not artificially restricted to the 40-60 jobs configured in law.cfg.
+# It does NOT create 10000 lxplus processes.
+#
+# =============================================================================
+
+workers=1
+nopoll_parallel_jobs=10000
+
+
+# Keep the control files of this submission strategy separate from the
+# previous background/signal/data controllers.
+
+export CF_JOB_BASE="${CF_DATA}/jobs/${configuration_option}/${version}/nopoll_stages"
+
+mkdir -p "$CF_JOB_BASE"
+
+
+# =============================================================================
+# Dataset selection
+# =============================================================================
+#
+# All backgrounds + signals + relevant data are submitted together.
+#
+# data_tau_* is intentionally excluded.
+#
+# =============================================================================
+
+all_datasets="*"
+all_skip_datasets="data_tau_*"
+
+mc_datasets="*"
+mc_skip_datasets="data_*"
+
+
+# =============================================================================
+# BDT / inclusive histogram variables
 # =============================================================================
 
 first_bdt_mass="$(
 python - <<'PY'
 from MSSM_H_tt.config.mass_points import read_bdt_masses
-
 print(read_bdt_masses()[0])
 PY
 )"
@@ -84,507 +158,410 @@ inclusive_variable="emu_mt_tot"
 
 
 # =============================================================================
-# Validate stage
+# JEC sources
 # =============================================================================
 
-case "$stage" in
-    calibrate|\
-    select|\
-    selection-stats|\
-    reduce|\
-    reduction-stats|\
-    merge-reduced|\
-    produce|\
-    create-histograms|\
-    merge-histograms|\
-    merge-shifted-histograms)
-        ;;
-    *)
-        echo "ERROR: unknown stage '$stage'"
-        exit 1
-        ;;
-esac
+jec_sources=(
+    "jec_Regrouped_Absolute"
+    "jec_Regrouped_BBEC1"
+    "jec_Regrouped_EC2"
+    "jec_Regrouped_HF"
+    "jec_Regrouped_RelativeBal"
+    "jec_Regrouped_FlavorQCD"
+
+    "jec_Regrouped_Absolute_${jec_era}"
+    "jec_Regrouped_BBEC1_${jec_era}"
+    "jec_Regrouped_EC2_${jec_era}"
+    "jec_Regrouped_HF_${jec_era}"
+    "jec_Regrouped_RelativeSample_${jec_era}"
+)
 
 
 # =============================================================================
-# Config list
+# Kinematic shift sources
 #
-# For 22and23_emu, $config contains several comma-separated configurations.
+# These require separate event processing.
 # =============================================================================
 
-IFS=',' read -r -a configs <<< "$config"
+kinematic_shift_sources=(
+    "unclustered"
+    "recoilresp"
+    "recoilres"
+
+    "${jec_sources[@]}"
+
+    "jer"
+)
 
 
-echo
-echo "================================================================"
-echo "MSSM no-poll submission"
-echo "================================================================"
-echo "Configuration option : $configuration_option"
-echo "Configs              : $config"
-echo "Stage                : $stage"
-echo "Version              : $version"
-echo "Workers              : $workers"
-echo "Submission threads   : $submission_threads"
-echo "Parallel jobs        : $parallel_jobs"
-echo "BDT seed variable    : $bdt_variable"
-echo "Inclusive variable   : $inclusive_variable"
-echo "CF_JOB_BASE          : ${CF_JOB_BASE:-<not set>}"
-echo "================================================================"
-echo
-
-
-# =============================================================================
-# Loop over configurations
+# Convert shift sources into actual shifts:
+#
+#   nominal
+#   source1_up
+#   source1_down
+#   source2_up
+#   source2_down
+#   ...
+#
+# These are used for CalibrateEvents through MergeHistograms.
 # =============================================================================
 
-for config_name in "${configs[@]}"; do
-
-    echo
-    echo "################################################################"
-    echo "# Config: $config_name"
-    echo "################################################################"
-    echo
-
-
-    # =========================================================================
-    # Read the dataset list and shifts directly from the config.
-    #
-    # Output format:
-    #
-    #   KINEMATIC <tab> shift1,shift2,...
-    #   SOURCES   <tab> source1,source2,...
-    #   DATASET   <tab> dataset_name <tab> 0/1
-    #
-    # The last field is 1 for data and 0 for MC.
-    #
-    # data_tau_* is deliberately excluded.
-    # =========================================================================
-
-    metadata="$(
-        python - "$config_name" <<'PY'
-import re
-import sys
-
-from MSSM_H_tt.config.analysis_MSSM_H_tt_skim_2025_v1 import (
-    analysis_MSSM_H_tt_skim_2025_v1 as analysis,
+kinematic_shifts=(
+    "nominal"
 )
 
-
-config_name = sys.argv[1]
-config_inst = analysis.get_config(config_name)
-
-
-# -------------------------------------------------------------------------
-# Kinematic shifts
-#
-# bdt_input currently identifies:
-#   - unclustered MET
-#   - JEC
-#   - JER
-#   - recoil response/resolution
-# -------------------------------------------------------------------------
-
-kinematic_shifts = ["nominal"]
-
-for shift_inst in config_inst.shifts:
-    if (
-        shift_inst.name != "nominal"
-        and shift_inst.has_tag("bdt_input")
-    ):
-        kinematic_shifts.append(
-            shift_inst.name
-        )
-
-print(
-    "KINEMATIC\t"
-    + ",".join(kinematic_shifts)
-)
-
-
-# -------------------------------------------------------------------------
-# Sources needed by MergeShiftedHistograms
-#
-# Weight-only sources are embedded into the nominal histogram in the current
-# histogramming implementation.
-#
-# Still pass them as shift sources here. MergeShiftedHistograms knows which
-# ones are embedded and therefore does not require separate MergeHistograms
-# tasks for them.
-# -------------------------------------------------------------------------
-
-weight_sources = set(
-    config_inst.x.histogram_weight_shift_sources
-)
-
-# Keep a stable, readable ordering.
-weight_source_order = (
-    "muon_weight",
-    "electron_weight",
-    "Trigger_SF_weight",
-    "pu_weight",
-    "top_pt_weight",
-    "zpt_weight",
-
-    "CMS_PS_ISR",
-    "CMS_PS_FSR",
-    "CMS_Scale_muR",
-    "CMS_Scale_muF",
-
-    "btag_weight_hf",
-    "btag_weight_lf",
-    "btag_weight_hfstats1",
-    "btag_weight_hfstats2",
-    "btag_weight_lfstats1",
-    "btag_weight_lfstats2",
-    "btag_weight_cferr1",
-    "btag_weight_cferr2",
-)
-
-shift_sources = []
-
-for source in weight_source_order:
-    if source in weight_sources:
-        shift_sources.append(source)
-
-# Include any future embedded source that is not in the explicit ordering.
-for source in sorted(
-    weight_sources - set(shift_sources)
-):
-    shift_sources.append(source)
-
-
-def shift_to_source(shift_name):
-    return re.sub(
-        r"_(up|down)$",
-        "",
-        shift_name,
+for source in "${kinematic_shift_sources[@]}"; do
+    kinematic_shifts+=(
+        "${source}_up"
+        "${source}_down"
     )
-
-
-# Add the genuine kinematic sources.
-for shift_inst in config_inst.shifts:
-    if not shift_inst.has_tag("bdt_input"):
-        continue
-
-    source = shift_to_source(
-        shift_inst.name
-    )
-
-    if source not in shift_sources:
-        shift_sources.append(source)
-
-
-print(
-    "SOURCES\t"
-    + ",".join(shift_sources)
-)
-
-
-# -------------------------------------------------------------------------
-# Datasets
-# -------------------------------------------------------------------------
-
-for dataset_inst in sorted(
-    config_inst.datasets,
-    key=lambda dataset: dataset.name,
-):
-    if dataset_inst.name.startswith(
-        "data_tau_"
-    ):
-        continue
-
-    print(
-        "DATASET\t"
-        f"{dataset_inst.name}\t"
-        f"{int(dataset_inst.is_data)}"
-    )
-PY
-    )"
-
-
-    # =========================================================================
-    # Parse metadata
-    # =========================================================================
-
-    kinematic_shifts_csv="$(
-        printf '%s\n' "$metadata" |
-        awk -F $'\t' '$1 == "KINEMATIC" {print $2; exit}'
-    )"
-
-    shift_sources_csv="$(
-        printf '%s\n' "$metadata" |
-        awk -F $'\t' '$1 == "SOURCES" {print $2; exit}'
-    )"
-
-    mapfile -t dataset_lines < <(
-        printf '%s\n' "$metadata" |
-        awk -F $'\t' '$1 == "DATASET" {print $2 "\t" $3}'
-    )
-
-
-    if [[ -z "$kinematic_shifts_csv" ]]; then
-        echo "ERROR: could not determine kinematic shifts for $config_name"
-        exit 1
-    fi
-
-    if [[ ${#dataset_lines[@]} -eq 0 ]]; then
-        echo "ERROR: no datasets found for $config_name"
-        exit 1
-    fi
-
-
-    echo "Kinematic shifts:"
-    echo "  $kinematic_shifts_csv"
-    echo
-    echo "Histogram shift sources:"
-    echo "  $shift_sources_csv"
-    echo
-    echo "Datasets:"
-    echo "  ${#dataset_lines[@]}"
-    echo
-
-
-    # =========================================================================
-    # Loop over datasets
-    # =========================================================================
-
-    for i in "${!dataset_lines[@]}"; do
-
-        IFS=$'\t' read -r dataset is_data <<< "${dataset_lines[$i]}"
-
-
-        # Data only needs nominal.
-        if [[ "$is_data" == "1" ]]; then
-            dataset_shifts="nominal"
-            dataset_type="data"
-        else
-            dataset_shifts="$kinematic_shifts_csv"
-            dataset_type="MC"
-        fi
-
-
-        echo
-        echo "================================================================"
-        echo "Dataset $((i + 1))/${#dataset_lines[@]}"
-        echo "  config  : $config_name"
-        echo "  dataset : $dataset"
-        echo "  type    : $dataset_type"
-        echo "  stage   : $stage"
-        echo "================================================================"
-        echo
-
-
-        # =====================================================================
-        # Common remote arguments
-        # =====================================================================
-
-        common_args=(
-            --configs "$config_name"
-            --datasets "$dataset"
-            --version "$version"
-
-            --workflow "htcondor"
-
-            --workers "$workers"
-
-            --no-poll "True"
-            --submission-threads "$submission_threads"
-
-            --parallel-jobs "$parallel_jobs"
-
-            --pilot "True"
-        )
-
-
-        # =====================================================================
-        # Stage
-        # =====================================================================
-
-        case "$stage" in
-
-            # -----------------------------------------------------------------
-            # Calibration
-            # -----------------------------------------------------------------
-
-            calibrate)
-
-                law run cf.CalibrateEventsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts" \
-                    --calibrator "main"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Selection
-            # -----------------------------------------------------------------
-
-            select)
-
-                law run cf.SelectEventsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Merge selection statistics
-            # -----------------------------------------------------------------
-
-            selection-stats)
-
-                law run cf.MergeSelectionStatsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Reduction
-            # -----------------------------------------------------------------
-
-            reduce)
-
-                law run cf.ReduceEventsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Determine reduction merging factors
-            # -----------------------------------------------------------------
-
-            reduction-stats)
-
-                law run cf.MergeReductionStatsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Merge reduced events
-            # -----------------------------------------------------------------
-
-            merge-reduced)
-
-                law run cf.MergeReducedEventsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Produce columns
-            # -----------------------------------------------------------------
-
-            produce)
-
-                law run cf.ProduceColumnsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts" \
-                    --producers "main"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Create histograms
-            #
-            # Keep BDT and inclusive variables as separate tasks so their task
-            # identities agree with the final plotting workflow.
-            # -----------------------------------------------------------------
-
-            create-histograms)
-
-                echo
-                echo "--- BDT histograms ---"
-                echo
-
-                law run cf.CreateHistogramsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts" \
-                    --variables "$bdt_variable"
-
-                echo
-                echo "--- Inclusive histogram ---"
-                echo
-
-                law run cf.CreateHistogramsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts" \
-                    --variables "$inclusive_variable"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Merge histograms for each kinematic shift
-            # -----------------------------------------------------------------
-
-            merge-histograms)
-
-                echo
-                echo "--- BDT histograms ---"
-                echo
-
-                law run cf.MergeHistogramsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts" \
-                    --variables "$bdt_variable"
-
-                echo
-                echo "--- Inclusive histogram ---"
-                echo
-
-                law run cf.MergeHistogramsWrapper \
-                    "${common_args[@]}" \
-                    --shifts "$dataset_shifts" \
-                    --variables "$inclusive_variable"
-                ;;
-
-
-            # -----------------------------------------------------------------
-            # Merge shifted histograms
-            #
-            # Data stops at nominal MergeHistograms.
-            # -----------------------------------------------------------------
-
-            merge-shifted-histograms)
-
-                if [[ "$is_data" == "1" ]]; then
-                    echo "Data dataset: MergeShiftedHistograms not required."
-                    continue
-                fi
-
-                echo
-                echo "--- BDT histograms ---"
-                echo
-
-                law run cf.MergeShiftedHistogramsWrapper \
-                    "${common_args[@]}" \
-                    --shift-sources "$shift_sources_csv" \
-                    --variables "$bdt_variable"
-
-                echo
-                echo "--- Inclusive histogram ---"
-                echo
-
-                law run cf.MergeShiftedHistogramsWrapper \
-                    "${common_args[@]}" \
-                    --shift-sources "$shift_sources_csv" \
-                    --variables "$inclusive_variable"
-                ;;
-
-        esac
-
-    done
-
 done
 
 
-echo
-echo "================================================================"
-echo "Submission pass completed"
-echo "  configuration : $configuration_option"
-echo "  stage         : $stage"
-echo "================================================================"
+# =============================================================================
+# Weight-only shift sources
+#
+# These are embedded in the nominal histogram by your histogram producer,
+# so they do NOT need independent Calibrate/Select/Reduce/Produce jobs.
+# They are nevertheless passed to MergeShiftedHistograms.
+# =============================================================================
+
+weight_shift_sources=(
+    "muon_weight"
+    "electron_weight"
+    "Trigger_SF_weight"
+    "pu_weight"
+    "top_pt_weight"
+    "zpt_weight"
+
+    "CMS_PS_ISR"
+    "CMS_PS_FSR"
+    "CMS_Scale_muR"
+    "CMS_Scale_muF"
+
+    "btag_weight_hf"
+    "btag_weight_lf"
+    "btag_weight_hfstats1"
+    "btag_weight_hfstats2"
+    "btag_weight_lfstats1"
+    "btag_weight_lfstats2"
+    "btag_weight_cferr1"
+    "btag_weight_cferr2"
+)
+
+
+# =============================================================================
+# Complete shift-source list for MergeShiftedHistograms
+# =============================================================================
+
+shift_sources=(
+    "${weight_shift_sources[@]}"
+    "${kinematic_shift_sources[@]}"
+)
+
+
+# =============================================================================
+# Convert arrays to comma-separated strings
+# =============================================================================
+
+join_by_comma()
+{
+    local IFS=","
+    echo "$*"
+}
+
+kinematic_shifts_csv="$(
+    join_by_comma "${kinematic_shifts[@]}"
+)"
+
+shift_sources_csv="$(
+    join_by_comma "${shift_sources[@]}"
+)"
+
+
+# =============================================================================
+# Common LAW arguments
+# =============================================================================
+
+common_remote_args=(
+    --configs "$config"
+    --version "$version"
+
+    --workflow "htcondor"
+
+    --workers "$workers"
+
+    --no-poll "True"
+
+    --parallel-jobs "$nopoll_parallel_jobs"
+)
+
+
+common_all_dataset_args=(
+    "${common_remote_args[@]}"
+
+    --datasets "$all_datasets"
+    --skip-datasets "$all_skip_datasets"
+)
+
+
+common_mc_dataset_args=(
+    "${common_remote_args[@]}"
+
+    --datasets "$mc_datasets"
+    --skip-datasets "$mc_skip_datasets"
+)
+
+
+# =============================================================================
+# Stage submission
+# =============================================================================
+
+case "$stage" in
+
+
+# -----------------------------------------------------------------------------
+# 0. Get dataset LFNs
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# 0. Get dataset LFNs
+#
+# Run this before calibration. This creates the LFN lists used by all
+# subsequent stages.
+# -----------------------------------------------------------------------------
+
+getdatasets)
+
+    law run cf.GetDatasetLFNsWrapper \
+        --configs "$config" \
+        --datasets "$all_datasets" \
+        --skip-datasets "$all_skip_datasets" \
+        --shifts "nominal" \
+        --workers "$workers"
+    ;;
+
+# -----------------------------------------------------------------------------
+# 1. Calibration
+# -----------------------------------------------------------------------------
+
+calibrate)
+
+    law run cf.CalibrateEventsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrator "main"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 2. Selection
+# -----------------------------------------------------------------------------
+
+select)
+
+    law run cf.SelectEventsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 3. Merge selection statistics
+# -----------------------------------------------------------------------------
+
+selection_stats)
+
+    law run cf.MergeSelectionStatsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 4. Reduction
+# -----------------------------------------------------------------------------
+
+reduce)
+
+    law run cf.ReduceEventsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 5. Determine reduced-file merging
+# -----------------------------------------------------------------------------
+
+reduction_stats)
+
+    law run cf.MergeReductionStatsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 6. Merge reduced events
+# -----------------------------------------------------------------------------
+
+merge_reduced)
+
+    law run cf.MergeReducedEventsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 7. Produce columns
+# -----------------------------------------------------------------------------
+
+produce)
+
+    law run cf.ProduceColumnsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default" \
+        --producers "main"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 8. Create histograms
+#
+# Keep BDT and inclusive requests separate so their task identities match
+# the requirements used later by plotting.
+# -----------------------------------------------------------------------------
+
+create_hists)
+
+    echo
+    echo "Submitting BDT histograms..."
+    echo
+
+    law run cf.CreateHistogramsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default" \
+        --producers "main" \
+        --variables "$bdt_variable"
+
+    echo
+    echo "Submitting inclusive histograms..."
+    echo
+
+    law run cf.CreateHistogramsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default" \
+        --producers "main" \
+        --variables "$inclusive_variable"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 9. Merge histograms
+#
+# MC:
+#   nominal + kinematic systematics
+#
+# Data:
+#   shift resolution collapses to nominal.
+# -----------------------------------------------------------------------------
+
+merge_hists)
+
+    echo
+    echo "Submitting BDT histogram merging..."
+    echo
+
+    law run cf.MergeHistogramsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default" \
+        --producers "main" \
+        --variables "$bdt_variable"
+
+    echo
+    echo "Submitting inclusive histogram merging..."
+    echo
+
+    law run cf.MergeHistogramsWrapper \
+        "${common_all_dataset_args[@]}" \
+        --shifts "$kinematic_shifts_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default" \
+        --producers "main" \
+        --variables "$inclusive_variable"
+    ;;
+
+
+# -----------------------------------------------------------------------------
+# 10. Merge systematic shifts
+#
+# MC only.
+#
+# Data stops at nominal MergeHistograms.
+# -----------------------------------------------------------------------------
+
+merge_shifted)
+
+    echo
+    echo "Submitting shifted BDT histogram merging..."
+    echo
+
+    law run cf.MergeShiftedHistogramsWrapper \
+        "${common_mc_dataset_args[@]}" \
+        --shift-sources "$shift_sources_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default" \
+        --producers "main" \
+        --variables "$bdt_variable"
+
+    echo
+    echo "Submitting shifted inclusive histogram merging..."
+    echo
+
+    law run cf.MergeShiftedHistogramsWrapper \
+        "${common_mc_dataset_args[@]}" \
+        --shift-sources "$shift_sources_csv" \
+        --calibrators "main" \
+        --selector "main" \
+        --reducer "cf_default" \
+        --producers "main" \
+        --variables "$inclusive_variable"
+    ;;
+
+
+*)
+
+    echo "ERROR: unknown stage '$stage'"
+    exit 3
+    ;;
+
+esac

@@ -130,7 +130,7 @@ common_args=(
     --version "$version"
 
     --workflow "htcondor"
-    --workers "2"
+    --workers "5"
     --poll-interval "5m"
     --pilot "True"
 
