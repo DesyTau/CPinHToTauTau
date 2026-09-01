@@ -60,19 +60,15 @@ variables_emu=$(IFS=,; echo "${variables_emu_list[*]}")
 # =============================================================================
 
 data_egamma_2022preEE='data_egamma_C,data_egamma_D,'
-data_muoneg_2022preEE='data_muoneg_C,data_muoneg_D,'
 data_mu_2022preEE='data_mu_C,data_mu_D,data_singlemu_C,'
 
 data_egamma_2022postEE='data_egamma_E,data_egamma_F,data_egamma_G,'
-data_muoneg_2022postEE='data_muoneg_E,data_muoneg_F,data_muoneg_G,'
 data_mu_2022postEE='data_mu_E,data_mu_F,data_mu_G,'
 
 data_egamma_2023preBPix='data_egamma_Cv123,data_egamma_Cv4,'
-data_muoneg_2023preBPix='data_muoneg_Cv123,data_muoneg_Cv4,'
 data_mu_2023preBPix='data_mu_Cv123,data_mu_Cv4,'
 
 data_egamma_2023postBPix='data_egamma_D,'
-data_muoneg_2023postBPix='data_muoneg_D,'
 data_mu_2023postBPix='data_mu_D,'
 
 
@@ -81,8 +77,6 @@ data_mu_2023postBPix='data_mu_D,'
 # =============================================================================
 
 bkg_dy='DYto2L_M_10to50_amcatnloFXFX,DYto2L_M_50_amcatnloFXFX,DYto2L_M_50_0J_amcatnloFXFX,DYto2L_M_50_1J_amcatnloFXFX,DYto2L_M_50_2J_amcatnloFXFX,DYto2Tau_MLL_50_0J_amcatnloFXFX,DYto2Tau_MLL_50_1J_amcatnloFXFX,DYto2Tau_MLL_50_2J_amcatnloFXFX,'
-
-bkg_dy_no_2Tau_1j='DYto2L_M_10to50_amcatnloFXFX,DYto2L_M_50_amcatnloFXFX,DYto2L_M_50_0J_amcatnloFXFX,DYto2L_M_50_1J_amcatnloFXFX,DYto2L_M_50_2J_amcatnloFXFX,DYto2Tau_MLL_50_0J_amcatnloFXFX,DYto2Tau_MLL_50_2J_amcatnloFXFX,'
 
 bkg_wj='WtoLNu_madgraphMLM,WtoLNu_1J_madgraphMLM,WtoLNu_2J_madgraphMLM,WtoLNu_3J_madgraphMLM,WtoLNu_4J_madgraphMLM,'
 
@@ -294,6 +288,31 @@ case $1 in
         workflow="htcondor"
 
         ;;
+"22_emu_data")
+        config="run3_2022_preEE_emu"
+        datasets="${data_egamma_2022preEE}${data_mu_2022preEE}"
+        categories=""
+        processes="data"
+        variables="$variables_emu"
+        workflow="htcondor"
+
+        ;;
+"22_emu_signal")
+        config="run3_2022_preEE_emu"
+        datasets="${signal_all}"
+        categories=""
+        processes="$signal_all"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
+"22_emu_bkg")
+        config="run3_2022_preEE_emu"
+        datasets="${bkgs}"
+        categories=""
+        processes="dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
 # =============================================================================
 # 2022EE e-mu
 # =============================================================================
@@ -356,68 +375,30 @@ case $1 in
         workflow="htcondor"
 
         ;;
-
-# =============================================================================
-# 2022EE e-mu
-# =============================================================================
-
-"22EE_emu")
-
+"22EE_emu_data")
         config="run3_2022_postEE_emu"
-
-
-        # ---------------------------------------------------------------------
-        # Background/data datasets only
-        #
-        # These are exposed separately because the new BDT plotting script
-        # should append only:
-        #
-        #   bbphi_phitt_${mass},ggphi_phitt_${mass}
-        #
-        # for each configuration.
-        # ---------------------------------------------------------------------
-
-        datasets_bkg_2022postEE="${data_egamma_2022postEE}${data_mu_2022postEE}${bkgs}"
-
-        # ---------------------------------------------------------------------
-        # Combined background/data dataset string
-        # ---------------------------------------------------------------------
-
-        datasets_bkg="${datasets_bkg_2022postEE}"
-
-        # ---------------------------------------------------------------------
-        # Old/full dataset definition
-        #
-        # Retained for other scripts that still expect all signal datasets.
-        # ---------------------------------------------------------------------
-
-        datasets="${data_egamma_2022postEE}${data_mu_2022postEE}${bkgs}${signal_all}"
-
-        # ---------------------------------------------------------------------
-        # Categories
-        #
-        # There is deliberately no fixed BDT category here anymore.
-        #
-        # The plotting script constructs mass-dependent categories:
-        #
-        #   cat_emu_sr__bdt_ggphi_and_bbphi_M${mass}
-        #   cat_emu_sr__bdt_dy_M${mass}
-        #   cat_emu_sr__bdt_tt_M${mass}
-        # ---------------------------------------------------------------------
-
+        datasets="${data_egamma_2022postEE}${data_mu_2022postEE}"
         categories=""
-
-
-        # ---------------------------------------------------------------------
-        # Processes
-        # ---------------------------------------------------------------------
-
-        processes="$processes_all"
-
+        processes="data"
         variables="$variables_emu"
-
         workflow="htcondor"
 
+        ;;
+"22EE_emu_signal")
+        config="run3_2022_postEE_emu"
+        datasets="${signal_all}"
+        categories=""
+        processes="$signal_all"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
+"22EE_emu_bkg")
+        config="run3_2022_postEE_emu"
+        datasets="${bkgs}"
+        categories=""
+        processes="dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv"
+        variables="$variables_emu"
+        workflow="htcondor"
         ;;
 # =============================================================================
 # 2023 e-mu
@@ -481,6 +462,31 @@ case $1 in
         workflow="htcondor"
 
         ;;
+"23_emu_data")
+        config="run3_2023_preBPix_emu"
+        datasets="${data_egamma_2023preBPix}${data_mu_2023preBPix}"
+        categories=""
+        processes="data"
+        variables="$variables_emu"
+        workflow="htcondor"
+
+        ;;
+"23_emu_signal")
+        config="run3_2023_preBPix_emu"
+        datasets="${signal_all}"
+        categories=""
+        processes="${signal_all}"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
+"23_emu_bkg")
+        config="run3_2023_preBPix_emu"
+        datasets="${bkgs}"
+        categories=""
+        processes="dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
 # =============================================================================
 # 2023BPix e-mu
 # =============================================================================
@@ -543,6 +549,31 @@ case $1 in
         workflow="htcondor"
 
         ;;
+"23BPix_emu_data")
+        config="run3_2023_postBPix_emu"
+        datasets="${data_egamma_2023postBPix}${data_mu_2023postBPix}"
+        categories=""
+        processes="data"
+        variables="$variables_emu"
+        workflow="htcondor"
+
+        ;;
+"23BPix_emu_signal")
+        config="run3_2023_postBPix_emu"
+        datasets="${signal_all}"
+        categories=""
+        processes="${signal_all}"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
+"23BPix_emu_bkg")
+        config="run3_2023_postBPix_emu"
+        datasets="${bkgs}"
+        categories=""
+        processes="dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
 # =============================================================================
 # Unknown option
 # =============================================================================
@@ -553,6 +584,9 @@ case $1 in
         echo
         echo "Available options:"
         echo " 22and23_emu, 22_emu, 22EE_emu, 23_emu, 23BPix_emu"
+        echo " 22_emu_data, 22EE_emu_data, 23_emu_data, 23BPix_emu_data"
+        echo " 22_emu_signal, 22EE_emu_signal, 23_emu_signal, 23BPix_emu_signal"
+        echo " 22_emu_bkg, 22EE_emu_bkg, 23_emu_bkg, 23BPix_emu_bkg"
 
         return 1
 

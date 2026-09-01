@@ -239,7 +239,7 @@ common_args=(
     --shift-sources "$shift_sources_csv"
 
     --workflow "htcondor"
-    --workers "40"
+    --workers "25"
     --poll-interval "5m"
     --pilot "True"
 
