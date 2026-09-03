@@ -6,7 +6,6 @@ import functools
 from columnflow.calibration import Calibrator, calibrator
 from MSSM_H_tt.calibration.jets import jec, jer
 from MSSM_H_tt.calibration.type1_met_corr import jme_ak4, jme_ak4_debug
-from MSSM_H_tt.calibration.tau import tau_energy_scale
 from MSSM_H_tt.calibration.electron import electron_smearing_scaling
 from columnflow.production.cms.seeds import deterministic_seeds
 from columnflow.util import maybe_import
@@ -25,8 +24,6 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
        jec,
        jer,
        jme_ak4,
-    #  jme_ak4_debug,
-       tau_energy_scale,
        electron_smearing_scaling,
        deterministic_seeds,
        "Jet.pt",
@@ -47,8 +44,6 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
         jec,
         jer,
         jme_ak4,
-        # jme_ak4_debug,
-        tau_energy_scale,
         electron_smearing_scaling,
         deterministic_seeds,
     },
@@ -60,10 +55,6 @@ def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     print("Performing electron scaling and smearing correction...")
     events = self[electron_smearing_scaling](events, **kwargs)
     print("Electron scaling and smearing correction... SUCCEEDED")
-
-    if self.dataset_inst.is_mc and (self.config_inst.channels.names()[0] != "emu"):
-        print("Performing tau energy scale correction...")
-        events = self[tau_energy_scale](events, **kwargs)
     print("Performing JEC...")
     events = self[jec](events, **kwargs)
     if self.dataset_inst.is_mc:
@@ -74,3 +65,13 @@ def main(self: Calibrator, events: ak.Array, **kwargs) -> ak.Array:
     events = self[jme_ak4](events, **kwargs)
     
     return events
+@main.init
+def main_init(self: Calibrator) -> None:
+    # JEC and JER variations are implemented at calibration level.
+    # Each variation should therefore get its own CalibrateEvents task/output.
+    if self.dataset_inst.is_mc:
+        self.shifts |= {
+            shift_inst.name
+            for shift_inst in self.config_inst.shifts
+            if shift_inst.has_tag(("jec", "jer"))
+        }

@@ -233,8 +233,6 @@ def add_run3(ana: od.Analysis,
         "data_singlemu_C",
         "data_mu_C",
         "data_mu_D",
-        "data_tau_C",
-        "data_tau_D",
         # DY->ll
         "DYto2L_M_10to50_amcatnloFXFX",
         "DYto2L_M_50_0J_amcatnloFXFX",
@@ -295,9 +293,6 @@ def add_run3(ana: od.Analysis,
         "data_mu_E",
         "data_mu_F",
         "data_mu_G",
-        "data_tau_E",
-        "data_tau_F",
-        "data_tau_G",
         # DY->ll
         "DYto2L_M_10to50_amcatnloFXFX",
         "DYto2L_M_50_0J_amcatnloFXFX",
@@ -1133,7 +1128,6 @@ def add_run3(ana: od.Analysis,
         "electron_scaling_smearing": f"{json_acd_path}EGM/{json_acd_tag}/latest/electronSS_EtDependent.json.gz",
         "electron_idiso"           : f"{json_acd_path}EGM/{json_acd_tag}/latest/electron.json.gz",
         "electron_trigger"         : f"{json_acd_path}EGM/{json_acd_tag}/latest/electronHlt.json.gz",
-        "tau_correction"           : f"{json_acd_path}TAU/{json_acd_tag}/latest/tau.json.gz", #tau_DeepTau2018v2p5_{cfg.x.year}_{tau_tag}
         "zpt_weight"               : (f"{corr_dir}dy_ptll/DY_pTll_weights_{cfg.x.year}{campaign.x.tag}.json.gz","v2"),
         "jet_jerc"                 : (f"{json_acd_path}JME/{json_acd_tag}/latest/jet_jerc.json.gz", "v2"),
         "jet_veto_map"             : (f"{json_acd_path}JME/{json_acd_tag}/latest/jetvetomaps.json.gz", "v2"),
@@ -1206,16 +1200,12 @@ def add_run3(ana: od.Analysis,
     })
     # target file size after MergeReducedEvents in MB
     cfg.x.reduced_file_size = 512.0
-    
     from MSSM_H_tt.config.variables import keep_columns
+
     keep_columns(cfg)
- 
+
     cfg.add_shift(name="nominal", id=0)
 
-    cfg.add_shift(name="tau_weight_down", id=1, type="shape")
-    cfg.add_shift(name="tau_weight_up", id=2, type="shape")
-    add_shift_aliases(cfg, "tau_weight", {"tau_weight": "tau_weight_{direction}"})
-    
     cfg.add_shift(name="muon_weight_down", id=3, type="shape")
     cfg.add_shift(name="muon_weight_up", id=4, type="shape")
     add_shift_aliases(cfg, "muon_weight", {"muon_weight": "muon_weight_{direction}"})
@@ -1435,7 +1425,6 @@ def add_run3(ana: od.Analysis,
 
     cfg.x.event_weights = DotDict({
         "normalization_weight": [],
-        "tau_weight": get_shifts("tau_weight"),
         "pu_weight": get_shifts("pu_weight"),
         "zpt_weight":get_shifts("zpt_weight"),
         "muon_weight": get_shifts("muon_weight"),
@@ -1612,8 +1601,9 @@ def add_run3(ana: od.Analysis,
     from MSSM_H_tt.config.categories import add_categories
     add_categories(cfg,channel=channel)
         
-    from MSSM_H_tt.config.variables import add_variables
+    from MSSM_H_tt.config.variables import add_variables, keep_columns
     add_variables(cfg)
+    keep_columns(cfg)
     
     from data_driven.hist_hooks import add_hist_hooks
     add_hist_hooks(ana)

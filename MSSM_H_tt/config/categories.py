@@ -86,29 +86,6 @@ def add_categories(config: od.Config,
         selection=["cat_incl"],
         label="inclusive",
     )
-    if channel=='mutau':
-        add_category(
-            config,
-            name="cat_mutau",
-            id=2,
-            selection=["cat_mutau"],
-            label=r"$\mu\tau$ inclusive",)
-        
-        
-    if channel=='tautau':
-        add_category(
-            config,
-            name="cat_tautau",
-            id=2,
-            selection=["cat_tautau"],
-            label=r"$\mu\tau$ inclusive",)  
-    if channel=='etau':
-        add_category(
-            config,
-            name="cat_etau",
-            id=3,
-            selection=["cat_etau"],
-            label=r"$e\tau$ inclusive")
     if channel=='emu':
         add_category(
             config,

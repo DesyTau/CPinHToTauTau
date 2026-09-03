@@ -22,21 +22,16 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
 
 @selector(
     uses={
-            f"Tau.{var}" for var in [
-                "pt","eta","phi","mass","dxy","dz", "charge", 
-                "rawDeepTau2018v2p5VSjet","idDeepTau2018v2p5VSjet", "idDeepTau2018v2p5VSe", "idDeepTau2018v2p5VSmu",
-                "rawIdx", "IPx", "IPy", "IPz", "ip_sig", "jetIdx"]
-    } | {
             f"Muon.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge",
-                "rawIdx","IPx", "IPy", "IPz","ip_sig", "jetIdx"] 
+                "rawIdx","IPx", "IPy", "IPz","ip_sig", "jetIdx","pfRelIso04_all"] 
     } | {
             f"Electron.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge", 
                 "pfRelIso03_all", "rawIdx", "IPx", "IPy", "IPz","ip_sig", "jetIdx"] 
-        } | {optional("Tau.genPartFlav")} | {hlt_path_matching},
+        } | {hlt_path_matching},
     produces={
-        'hcand_*'
+        "hcand_emu.*"
     } | {hlt_path_matching},
     exposed=False,
 )
@@ -90,7 +85,7 @@ def new_higgscand(
 
 @selector(
     uses={
-        'hcand_*'
+        'hcand_emu.*'
     },
     exposed=False,
 )

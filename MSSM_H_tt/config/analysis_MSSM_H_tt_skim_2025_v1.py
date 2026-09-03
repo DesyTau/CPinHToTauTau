@@ -48,8 +48,6 @@ ana.x.config_groups = {}
 from MSSM_H_tt.config.config_run3_skim_2025_v1 import add_run3
 # ------------------------------------------------------------- #
 
-# channels = ['etau','mutau','emu','tautau']
-
 channels = ['emu']
 
 #------------------------ Run3 2022 preEE samples ----------------------- #

@@ -177,9 +177,25 @@ def keep_columns(cfg: od.Config) -> None:
                 "0p375_alt", "0p5", "0p5_alt", "minus0p25", "minus0p25_alt"
             ]
         } | {
-            f"hcand.{var}" for var in [
-                "pt","eta","phi","mass", "charge", 
-                "decayMode", "rawIdx", "ip_sig", "IPx", "IPy","IPz"
+            f"hcand_emu.lep0.{var}" for var in [
+                "jetIdx",
+                "pt",
+                "eta",
+                "phi",
+                "mass",
+                "ip_sig",
+                "charge",
+            ]
+        } | {
+            f"hcand_emu.lep1.{var}" for var in [
+                "jetIdx",
+                "pt",
+                "eta",
+                "phi",
+                "mass",
+                "ip_sig",
+                "charge",
+                "pfRelIso04_all",
             ]
         } |{
             "GenTau.*", "GenTauProd.*",
@@ -214,7 +230,7 @@ def keep_columns(cfg: od.Config) -> None:
                 "pdgId", "tauIdx"
             ]
         } | {
-		"hcand_*","tau_decay_prods*", "OC_lepton_veto",
+		"hcand_emu.*","tau_decay_prods*",
 	} | {"is_b_vetoed","channel_id"} | {ColumnCollection.ALL_FROM_SELECTOR},
         "cf.MergeSelectionMasks": {
             "normalization_weight", 

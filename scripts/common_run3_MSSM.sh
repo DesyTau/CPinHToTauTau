@@ -313,6 +313,14 @@ case $1 in
         variables="$variables_emu"
         workflow="htcondor"
         ;;
+"22_emu_bkg_limited")
+        config="run3_2022_preEE_emu_limited"
+        datasets="TTto2L2Nu"
+        categories=""
+        processes="tt"
+        variables="$variables_emu"
+        workflow="htcondor"
+        ;;
 # =============================================================================
 # 2022EE e-mu
 # =============================================================================

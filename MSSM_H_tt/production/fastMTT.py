@@ -49,7 +49,7 @@ logger = law.logger.get_logger(__name__)
     },
     produces={
         # new columns
-        'hcand_*',
+        'hcand_emu',
     },
 )
 

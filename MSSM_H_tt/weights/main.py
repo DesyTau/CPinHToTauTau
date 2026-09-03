@@ -77,7 +77,6 @@ def main_init(self: WeightProducer) -> None:
         "mc_weight",
         "pu_weight",
         "muon_weight",
-        "tau_weight",
         "electron_weight",
         "zpt_weight",
         "top_pt_weight",

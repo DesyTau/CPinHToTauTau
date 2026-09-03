@@ -187,11 +187,22 @@ def channel_id(
     events = set_ak_column(events, "channel_id", channel_id)
 
     return events
-
-
 @producer(
-    uses={"Jet.*"},
-    produces={"Jet.*"},
+    uses={
+        "Jet.eta",
+        "Jet.jetId",
+        "Jet.neHEF",
+        "Jet.neEmEF",
+        "Jet.chMultiplicity",
+        "Jet.neMultiplicity",
+        "Jet.chHEF",
+        "Jet.muEF",
+        "Jet.chEmEF",
+    },
+    produces={
+        "Jet.pass_tightID",
+        "Jet.pass_tightID_lep_veto",
+    },
     exposed=False,
 )
 def create_jetID_masks(

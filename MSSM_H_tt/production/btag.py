@@ -18,7 +18,7 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
 
 @producer(
     uses={f"Jet.{var}" for var in
-          ["pt", "eta", "phi", "mass", "btagPNetB", "pass_tightID_lep_veto"
+          ["pt", "eta", "phi", "mass", "btagPNetB", "pass_tightID_lep_veto",  "hadronFlavour"
            ]},
     produces={
          f"btag_weight_{shift}"

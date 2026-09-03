@@ -18,8 +18,7 @@ from columnflow.columnar_util import optional_column as optional
 from columnflow.production.util import attach_coffea_behavior
 
 from MSSM_H_tt.production.pileup import pu_weight
-from MSSM_H_tt.production.weights import muon_weight, tau_weight, electron_weight, trigger_sf
-from MSSM_H_tt.production.sample_split import split_dy
+from MSSM_H_tt.production.weights import muon_weight, electron_weight, trigger_sf
 from MSSM_H_tt.production.generatorZ import generatorZ
 from MSSM_H_tt.production.dilepton_features import hcand_fields, hcand_mt
 from MSSM_H_tt.production.z_pt_reweighting import zpt_weight
@@ -127,10 +126,8 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         attach_coffea_behavior,
         mc_weight,
         normalization_weights,
-        split_dy,
         pu_weight,
         muon_weight,
-        tau_weight,
         electron_weight,
         trigger_sf,
         generatorZ,
@@ -161,10 +158,8 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         attach_coffea_behavior,
         mc_weight,
         normalization_weights,
-        split_dy,
         pu_weight,
         muon_weight,
-        tau_weight,
         electron_weight,
         trigger_sf,
         generatorZ,
@@ -287,14 +282,6 @@ def main_common(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     events = self[D_zeta](events, **kwargs)
 
     # ------------------------------------------------------------
-    # Optional DY split
-    # ------------------------------------------------------------
-    if (self.dataset_inst.is_mc & (self.config_inst.channels.names()[0] != "emu")):
-        if ak.any(["dy" in proc for proc in processes]):
-            print("Splitting Drell-Yan dataset...")
-            events = self[split_dy](events, **kwargs)
-
-    # ------------------------------------------------------------
     # MC weights and systematics
     # ------------------------------------------------------------
     if self.dataset_inst.is_mc:
@@ -319,9 +306,6 @@ def main_common(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
 
         print("Producing SFs from efficiencies...")
         events = self[trigger_sf](events, **kwargs)
-
-        print("Producing Tau weights...")
-        events = self[tau_weight](events, do_syst=True, **kwargs)
 
         print("Producing btag SF fixed WP approach...")
         year = self.config_inst.x.year
