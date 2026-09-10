@@ -18,9 +18,9 @@ set_ak_column_f32 = functools.partial(set_ak_column, value_type=np.float32)
 set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
 
 @producer(
-    uses={ f"PuppiMET.{var}" for var in 
+    uses={ f"RecoilCorrMET.{var}" for var in 
         ["pt", "phi",]} | {"hcand_*"},
-    produces={"D_zeta", "D_zeta_check"},
+    produces={"D_zeta"},
     exposed=False,
 )
 def D_zeta(
@@ -35,7 +35,7 @@ def D_zeta(
     electron    = events.hcand_emu.lep0
     muon        = events.hcand_emu.lep1
 
-    puppi_met_p2 = get_p2(events.PuppiMET)  
+    puppi_met_p2 = get_p2(events.RecoilCorrMET)  
     electron_p2 = get_p2(electron)
     muon_p2 = get_p2(muon)
     
@@ -55,9 +55,14 @@ def D_zeta(
     d_zeta = p_zeta_miss - 0.85*p_zeta_vis
     
     d_zeta = ak.flatten(d_zeta)
-    d_zeta_mask = ((d_zeta > 0) & (d_zeta < 150))
-    d_zeta_check = ak.where(d_zeta_mask, d_zeta, EMPTY_FLOAT)
     
-    events = set_ak_column(events, "D_zeta_check", d_zeta_check)
     events = set_ak_column(events, "D_zeta", d_zeta)
     return events
+
+@D_zeta.init
+def D_zeta_init(self: Producer) -> None:
+    self.shifts |= {
+        shift_inst.name
+        for shift_inst in self.config_inst.shifts
+        if shift_inst.has_tag(("met", "met_recoil"))
+    }

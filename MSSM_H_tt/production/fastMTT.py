@@ -45,12 +45,11 @@ logger = law.logger.get_logger(__name__)
     uses={
         # nano columns
         'event',
-        'hcand_*',
-        'PuppiMET*', #here : change from PuppiMET.pt, PuppiMET.phi, PuppiMET.covXX, PuppiMET.covXY, PuppiMET.covYY
+        'RecoilCorrMET.pt', 'RecoilCorrMET.phi', 'RecoilCorrMET.covXX', 'RecoilCorrMET.covXY', 'RecoilCorrMET.covYY'
     },
     produces={
         # new columns
-        'hcand_*',
+        'hcand_emu.*',
     },
 )
 
@@ -72,7 +71,7 @@ def fastMTT(
     ch_obj = self.config_inst.x.ch_objects[ch_str]
 
     hcand = events[f'hcand_{ch_str}']
-    met = events.PuppiMET
+    met = events.RecoilCorrMET
 
     print('Running fastMTT')
 
@@ -202,3 +201,11 @@ def fastMTT(
 
     events = set_ak_column(events, f'hcand_{ch_str}', hcand)
     return events
+
+@fastMTT.init
+def fastMTT_init(self: Producer) -> None:
+    self.shifts |= {
+        shift_inst.name
+        for shift_inst in self.config_inst.shifts
+        if shift_inst.has_tag(("met", "met_recoil"))
+    }

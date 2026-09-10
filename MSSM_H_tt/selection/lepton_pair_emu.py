@@ -3,143 +3,83 @@
 """
 Prepare h-Candidate from SelectionResult: selected lepton indices & channel_id [trigger matched] 
 """
-
+import copy
 from columnflow.selection import Selector, SelectionResult, selector
 from columnflow.reduction.util import create_collections_from_masks
 from columnflow.util import maybe_import
 from columnflow.columnar_util import EMPTY_FLOAT, Route, set_ak_column
+from MSSM_H_tt.util import get_lep_p4
 
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
 coffea = maybe_import("coffea")
 maybe_import("coffea.nanoevents.methods.nanoaod")
 
-
-def get_sorted_pair(
-        dtrpairs: ak.Array,
-        dtrpairindices: ak.Array
+def select_best_pair(
+        lep0: ak.Array,
+        lep1: ak.Array,
+        vars4sorting: dict,
 )->ak.Array:
-
-    sorted_idx = ak.argsort(dtrpairs["0"].pfRelIso03_all, ascending=True)
-    # Sort the pairs based on pfRelIso03_all of the first object in each pair
-    dtrpairs = dtrpairs[sorted_idx]
-    dtrpairindices = dtrpairindices[sorted_idx]
-
-    # Extract the pfRelIso03_all values for the first object in each pair
-    lep1_pfRelIso03_all = dtrpairs["0"].pfRelIso03_all
-    # Check if the pfRelIso03_all values are the same for the first two objects in each pair
-    where_same_iso_1 = ak.fill_none(
-        (
-            ak.firsts(dtrpairs["0"].pfRelIso03_all[:,:1], axis=1) 
-            ==
-            ak.firsts(dtrpairs["0"].pfRelIso03_all[:,1:2], axis=1)
-        ), False
-    )
-    
-    # Sort the pairs based on pt if pfRelIso03_all is the same for the first two objects
-    sorted_idx = ak.where(where_same_iso_1,
-                          ak.argsort(dtrpairs["0"].pt, ascending=False),
-                          sorted_idx)
-
-    dtrpairs = dtrpairs[sorted_idx]
-    dtrpairindices = dtrpairindices[sorted_idx]
-
-    # Check if the pt values are the same for the first two objects in each pair    
-    where_same_pt_1 = ak.fill_none(
-        (
-            ak.firsts(dtrpairs["0"].pt[:,:1], axis=1)
-            ==
-            ak.firsts(dtrpairs["0"].pt[:,1:2], axis=1)
-        ), False
-    )
-    
-    # if so, sort the pairs with tau rawDeepTau2017v2p1VSjet
-    sorted_idx = ak.where(where_same_pt_1,
-                          ak.argsort(dtrpairs["1"].pfRelIso03_all, ascending=False),
-                          sorted_idx)
-    dtrpairs = dtrpairs[sorted_idx]
-    dtrpairindices = dtrpairindices[sorted_idx]
-    # check if the first two pairs have taus with same rawDeepTau2017v2p1VSjet
-    where_same_iso_2 = ak.fill_none(
-        (
-            ak.firsts(dtrpairs["1"].pfRelIso03_all[:,:1], axis=1)
-            ==
-            ak.firsts(dtrpairs["1"].pfRelIso03_all[:,1:2], axis=1)
-        ), False
-    )
-    
-    # Sort the pairs based on pt if rawDeepTau2017v2p1VSjet is the same for the first two objects
-    sorted_idx = ak.where(where_same_iso_2,
-                          ak.argsort(dtrpairs["1"].pt, ascending=False),
-                          sorted_idx)
-    # finally, the pairs are sorted
-    dtrpairs = dtrpairs[sorted_idx]
-    dtrpairindices = dtrpairindices[sorted_idx]
-
-    # Extract the first object in each pair (lep1) and the second object (lep2)
-    lep1 = ak.singletons(ak.firsts(dtrpairs["0"], axis=1))
-    lep2 = ak.singletons(ak.firsts(dtrpairs["1"], axis=1))
-
-    lep1idx = ak.singletons(ak.firsts(dtrpairindices["0"], axis=1))
-    lep2idx = ak.singletons(ak.firsts(dtrpairindices["1"], axis=1))
-
-    # Concatenate lep1 and lep2 to create the final dtrpair
-    dtrpair    = ak.concatenate([lep1, lep2], axis=1)
-    dtrpairidx = ak.concatenate([lep1idx, lep2idx], axis=1)
-
-    return dtrpairidx
-
-
+    def leading_lep(lep):
+        return ak.firsts(lep[:,:1], axis=1)
+    empty_lep = ak.zeros_like(lep0.obj_idx, dtype=np.int32)[..., :0]
+    lep0_idx = empty_lep
+    lep1_idx = empty_lep
+    for (var_str, sort_dir) in vars4sorting.items():
+        the_var = eval(var_str)
+        sorted_idx = ak.argsort(the_var, ascending=(sort_dir == 'ascending'))
+        sorted_var = the_var[sorted_idx]
+        vars_not_equal = ak.fill_none((ak.firsts(sorted_var[:,:1], axis=1) != ak.firsts(sorted_var[:,1:2], axis=1)),False)
+        lep0_leading_idx = lep0.obj_idx[sorted_idx[:,:1]]
+        lep0_idx = ak.where(vars_not_equal,lep0_leading_idx, lep0_idx)
+        lep1_leading_idx = lep1.obj_idx[sorted_idx[:,:1]]
+        lep1_idx = ak.where(vars_not_equal,lep1_leading_idx, lep1_idx)
+    pairs = ak.zip({'lep0': lep0_idx,
+                    'lep1': lep1_idx})
+    return pairs
 
 @selector(
-    uses={
-        "Electron.pt", "Electron.eta", "Electron.phi", "Electron.mass",
-        "Electron.charge", "Electron.pfRelIso03_all",
-        "Muon.pt", "Muon.eta", "Muon.phi", "Muon.mass",
-        "Muon.charge", "Muon.pfRelIso03_all",
-        "PuppiMET.pt", "PuppiMET.phi",
-    },
+    uses=
+        {f"Electron.{var}" for var in [
+            "pt", "eta", "phi", "mass","pfRelIso03_all", "rawIdx"]
+        } | {
+            f"Muon.{var}" for var in [
+                "pt","eta","phi","mass", "pfRelIso04_all"] 
+        } ,
     exposed=False,
 )
-def emu_selection(
+def pair_selection(
         self: Selector,
         events: ak.Array,
-        lep1_indices: ak.Array,
-        lep2_indices: ak.Array,
+        channel: str,
+        lep0_idxs: ak.Array,
+        lep1_idxs: ak.Array,
         **kwargs,
 ) -> tuple[ak.Array, SelectionResult, ak.Array]:
-
-    lep_indices_pair = ak.cartesian([lep1_indices, 
-                                     lep2_indices], axis=1)
-    leps_pair        = ak.cartesian([events.Electron[lep1_indices], 
-                                     events.Tau[lep2_indices]], axis=1)
-    
-    # pair of leptons: probable higgs candidate -> leps_pair
-    # and their indices                         -> lep_indices_pair 
-    lep1, lep2 = ak.unzip(leps_pair)
-    lep1_idx, lep2_idx = ak.unzip(lep_indices_pair)
-
-    preselection = {
-        "dr_0p5"        : lep1.metric_table(lep2) > 0.5,
-    }
-
-    good_pair_mask = lep1_idx >= 0
-    pair_selection_steps = {}
-    for cut in preselection.keys():
-        good_pair_mask = good_pair_mask & preselection[cut]
-        pair_selection_steps[cut] = ak.sum(preselection[cut], axis=1) > 0
-        
-
-    leps_pair_sel = leps_pair[good_pair_mask]
-    lep_indices_pair_sel = lep_indices_pair[good_pair_mask]
-
-    where_many   = ak.num(lep_indices_pair_sel, axis=1) > 1
-    pair_indices = ak.where(where_many, 
-                            get_sorted_pair(leps_pair_sel,
-                                            lep_indices_pair_sel),
-                            lep_indices_pair_sel)
-
-
-    return events, SelectionResult(
-        steps = pair_selection_steps,
-    ), pair_indices
+    print(f'Selecting dilepton pairs for {channel}')
+    ch_objects = self.config_inst.x.ch_objects
+    presel_leps = []
+    for idx in range(2):
+        the_lep = eval(f"events[ch_objects[channel].lep{idx}][lep{idx}_idxs]")
+        the_lep['obj_idx'] = eval(f"lep{idx}_idxs")
+        presel_leps.append(the_lep)
+    pairs = ak.cartesian(presel_leps, axis=1)
+    lep0, lep1 = ak.unzip(pairs)
+    #Can be the case that this line is not needed, but it is better to explicitly define 4-vectors so the methods of coffea work properly
+    [lep0_p4,lep1_p4] = [get_lep_p4(the_lep) for the_lep in [lep0,lep1]]
+    if channel =='emu': 
+        vars4sorting = {'lep0.pfRelIso03_all'           : 'ascending', 
+                        'lep0.pt'                       : 'descending',
+                        'lep1.pfRelIso04_all'           : 'ascending',
+                        'lep1.pt'                       : 'descending'}
+        pair_cuts = {"dr_0p5"        : lep0_p4.delta_r(lep1_p4) > 0.3}
+    mask = ak.ones_like(lep0_p4.pt, dtype=np.bool_)
+    for cut in pair_cuts.values():
+        mask = mask & cut
+    [presel_lep0,presel_lep1] = [the_lep[mask] for the_lep in [lep0,lep1]]
+    has_multiple_pairs = ak.num(lep0.pt, axis=1) > 1
+    pair_idxs = ak.where(has_multiple_pairs,
+                         select_best_pair(presel_lep0,presel_lep1,vars4sorting),
+                         ak.zip({'lep0': presel_lep0.obj_idx,
+                                 'lep1': presel_lep1.obj_idx}))
+    return pair_idxs

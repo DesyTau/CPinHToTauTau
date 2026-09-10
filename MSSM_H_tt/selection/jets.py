@@ -131,15 +131,6 @@ def jet_veto_map(
 
     return events, results
 
-@jet_veto_map.init
-def jet_veto_map_init(self: Selector, **kwargs) -> None:
-    # register shifts
-    self.shifts |= {
-        shift_inst.name
-        for shift_inst in self.config_inst.shifts
-        if shift_inst.has_tag(("jec", "jer"))
-    }
-
 @jet_veto_map.requires
 def jet_veto_map_requires(
     self: Selector,

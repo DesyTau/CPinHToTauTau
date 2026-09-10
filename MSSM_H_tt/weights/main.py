@@ -76,14 +76,13 @@ def main_init(self: WeightProducer) -> None:
         "normalization_weight",
         "mc_weight",
         "pu_weight",
-        "muon_weight_nom",
-        "tau_weight_nom",
-        "electron_weight_nom",
+        "muon_weight",
+        "electron_weight",
         "zpt_weight",
-        "btag_weight_SF_nom",
         "top_pt_weight",
         "Trigger_SF_nom",
         "stitching_weights",
+        "btag_weight",
     }
     self.uses |= self.weight_columns
     

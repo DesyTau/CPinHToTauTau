@@ -22,10 +22,10 @@ from columnflow.util import maybe_import, DotDict
 from columnflow.columnar_util import optional_column as optional
 from columnflow.columnar_util import EMPTY_FLOAT, Route, set_ak_column
 
-from MSSM_H_tt.selection.physics_objects import muon_selection, electron_selection, tau_selection
+from MSSM_H_tt.selection.physics_objects import muon_selection, electron_selection
 from MSSM_H_tt.selection.trigger import trigger_selection
-from MSSM_H_tt.selection.lepton_pair import pair_selection
-from MSSM_H_tt.selection.lepton_veto import single_lepton_veto, second_lepton_veto, OC_lepton_veto, bugged_DY_sample_event_veto
+from MSSM_H_tt.selection.lepton_pair_emu import pair_selection
+from MSSM_H_tt.selection.lepton_veto import second_lepton_veto, bugged_DY_sample_event_veto
 from MSSM_H_tt.selection.higgscand import new_higgscand, mask_nans
 from MSSM_H_tt.selection.met_nanoAOD_filters import met_nanoAOD_filters
 from MSSM_H_tt.selection.jets import jet_veto_map
@@ -51,13 +51,10 @@ coffea = maybe_import("coffea")
         trigger_selection,
         muon_selection,
         electron_selection,
-        tau_selection,
         pair_selection,
         channel_id,
         create_jetID_masks,
-        single_lepton_veto,
         second_lepton_veto,
-        OC_lepton_veto,
         increment_stats,
         new_higgscand,
         mask_nans,
@@ -78,13 +75,10 @@ coffea = maybe_import("coffea")
         trigger_selection,
         muon_selection,
         electron_selection,
-        tau_selection,
         pair_selection,
         channel_id,
         create_jetID_masks,
-        single_lepton_veto,
         second_lepton_veto,
-        OC_lepton_veto,
         increment_stats,
         new_higgscand,
         mask_nans,
@@ -93,7 +87,6 @@ coffea = maybe_import("coffea")
         jets_taggable,
         met_nanoAOD_filters,
         "category_ids",
-        "OC_lepton_veto",
         bugged_DY_sample_event_veto,
         met_cov_check,
     },
@@ -139,38 +132,16 @@ def main(
 
     # tau selection
     # e.g. tau_idx: [ [1], [0,1], [1,2], [], [0,1] ]
-    events, good_tau_indices = self[tau_selection](events,
-                                                    call_force=True,
-                                                    **kwargs)
-    
-    mutau_indices_pair = self[pair_selection](events,
-                                              'mutau',
-                                              good_muon_indices,
-                                              good_tau_indices)
-    etau_indices_pair = self[pair_selection](events,
-                                             'etau',
-                                             good_electron_indices,
-                                             good_tau_indices)
     emu_indices_pair = self[pair_selection](events,
                                              'emu',
                                              ele_emu_indices,
                                              mu_emu_indices)
     
-    tautau_indices_pair = self[pair_selection](events,
-                                              'tautau',
-                                              good_tau_indices,
-                                              good_tau_indices)
-    
     pair_idxs = DotDict.wrap({
-        'etau'  : etau_indices_pair,
-        'mutau' : mutau_indices_pair,
         'emu'   : emu_indices_pair,
-        'tautau': tautau_indices_pair
-    })
-    
-    raw_dilepton_mask = ak.ones_like(events.event, dtype=np.bool_)
-    for channel in self.config_inst.channels.names():
-        raw_dilepton_mask = raw_dilepton_mask | eval(f'(ak.num({channel}_indices_pair.lep0, axis=1) > 0)')
+    }) 
+       
+    raw_dilepton_mask = (ak.num(emu_indices_pair.lep0, axis=1) + ak.num(emu_indices_pair.lep1, axis=1))>=2
     
     results += SelectionResult(
     steps = {
@@ -181,6 +152,7 @@ def main(
                                  pair_idxs,
                                  domatch=True,
                                  **kwargs)
+    
     results += hcand_res
     
     #produce masks for tight_jetID and tight_jet_id_lep_veto
@@ -189,12 +161,6 @@ def main(
     #produce channel id column (legacy)
     events = self[channel_id](events)
 
-    # Single lepton veto
-    # it is only applied on the events with one higgs candidate only
-    events, single_lepton_veto_results = self[single_lepton_veto](events,
-                                                                  single_veto_electron_indices,
-                                                                  single_veto_muon_indices)
-    results += single_lepton_veto_results
 
     # # Additional lepton veto
     if self.config_inst.channels.names()[0] == 'emu':
@@ -207,10 +173,6 @@ def main(
                                                                       single_veto_muon_indices)
     results += second_lepton_veto_results
 
-    # Opposite Charge (OC) lepton pair veto
-    events, OC_lepton_veto_results = self[OC_lepton_veto](events,
-                                                        OC_veto_electron_indices,
-                                                        OC_veto_muon_indices)
     # Met Covariance check
     events, met_cov_check_results = self[met_cov_check](events,**kwargs)
     
@@ -237,10 +199,11 @@ def main(
     
     
     # combined event selection after all steps
+    
     event_sel = reduce(and_, results.steps.values())
     
     results.event = event_sel
-    
+
     events = self[jets_taggable](events, **kwargs) 
     # add the mc weight
     if self.dataset_inst.is_mc:
@@ -287,5 +250,4 @@ def main(
             }
     events, results = self[increment_stats](
         events, results, stats, weight_map=weight_map, group_map=group_map, **kwargs)
-    
     return events, results
