@@ -217,7 +217,7 @@ def keep_columns(cfg: od.Config) -> None:
             "lead_b_jet.*",
             "sublead_b_jet.*",
             "di_b_jet.*",
-
+            
             "all_triggers_id",
             "triggerID_e",
             "triggerID_mu",
@@ -356,6 +356,21 @@ def add_jet_features(cfg: od.Config) -> None:
         binning=(3, 0, 3),
         discrete_x=True,
         x_title="N_b_jets",
+    )
+    cfg.add_variable(
+    name="lead_jet_is_btagged",
+    expression="lead_jet_is_btagged",
+    binning=(2, 0, 2),
+    x_title="Leading jet is b-tagged",
+    discrete_x=True,
+    )
+
+    cfg.add_variable(
+        name="sublead_jet_is_btagged",
+        expression="sublead_jet_is_btagged",
+        binning=(2, 0, 2),
+        x_title="Subleading jet is b-tagged",
+        discrete_x=True,
     )
     cfg.add_variable(
             name="n_jets_clipped",

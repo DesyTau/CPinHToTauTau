@@ -290,7 +290,7 @@ def jet_pt_def(
     sorted_jets = events.Jet[jet_pt_sorted_idx]
 
     jet_selections = {
-        "jet_pt_30": sorted_jets.pt > 30.0,
+        "jet_pt_20": sorted_jets.pt > 20.0,
         "jet_eta_4.7": abs(sorted_jets.eta) < 4.7,
         "jet_id": sorted_jets.pass_tightID_lep_veto,
     }
@@ -602,4 +602,198 @@ def number_b_jet(
 
     return events
 
+@producer(
+    uses={
+        "Jet.pt",
+        "Jet.eta",
+        "Jet.phi",
+        "Jet.jetId",
+        "Jet.neHEF",
+        "Jet.neEmEF",
+        "Jet.chMultiplicity",
+        "Jet.neMultiplicity",
+        "Jet.chHEF",
+        "Jet.muEF",
+        "Jet.chEmEF",
+        "Jet.btagPNetB",
+        "hcand_emu.lep0.jetIdx",
+        "hcand_emu.lep0.eta",
+        "hcand_emu.lep0.phi",
+        "hcand_emu.lep1.jetIdx",
+        "hcand_emu.lep1.eta",
+        "hcand_emu.lep1.phi",
+    },
+    produces={
+        "lead_jet_is_btagged",
+        "sublead_jet_is_btagged",
+    },
+)
+def jet_btag_flags(
+    self: Producer,
+    events: ak.Array,
+    **kwargs,
+) -> ak.Array:
+
+    # ---------------------------------------------------------
+    # Reconstruct the jet ID
+    # ---------------------------------------------------------
+    nano_version = self.config_inst.campaign.x.version
+    jets = events.Jet
     
+    if nano_version in [13, 14]:
+
+        tightID_eta_2p6 = (
+            (jets.neHEF < 0.99)
+            & (jets.neEmEF < 0.9)
+            & ((jets.chMultiplicity + jets.neMultiplicity) > 1)
+            & (jets.chHEF > 0.01)
+            & (jets.chMultiplicity > 0)
+        )
+
+        tightID_eta_2p6_to_2p7 = (
+            (jets.neHEF < 0.9)
+            & (jets.neEmEF < 0.99)
+        )
+
+        tightID_eta_2p7_to_3p0 = (
+            jets.neHEF < 0.99
+        )
+
+        tightID_eta_geq_3p0 = (
+            (jets.neMultiplicity >= 2)
+            & (jets.neEmEF < 0.4)
+        )
+
+        pass_tightID = (
+            ((abs(jets.eta) < 2.6) & tightID_eta_2p6)
+            | (
+                (abs(jets.eta) >= 2.6)
+                & (abs(jets.eta) < 2.7)
+                & tightID_eta_2p6_to_2p7
+            )
+            | (
+                (abs(jets.eta) >= 2.7)
+                & (abs(jets.eta) < 3.0)
+                & tightID_eta_2p7_to_3p0
+            )
+            | (
+                (abs(jets.eta) >= 3.0)
+                & tightID_eta_geq_3p0
+            )
+        )
+
+        pass_tightID_lep_veto = ak.where(
+            abs(jets.eta) < 2.7,
+            pass_tightID
+            & (jets.muEF < 0.8)
+            & (jets.chEmEF < 0.8),
+            pass_tightID,
+        )
+
+    else:
+        pass_tightID_lep_veto = (
+            (abs(jets.eta) < 2.7)
+            & ((jets.jetId & 3) != 0)
+        )
+
+    # ---------------------------------------------------------
+    # Sort jets by pT
+    # ---------------------------------------------------------
+    jet_idx = ak.argsort(jets.pt, axis=1, ascending=False)
+    sorted_jets = jets[jet_idx]
+    sorted_jet_id = pass_tightID_lep_veto[jet_idx]
+
+    # ---------------------------------------------------------
+    # Standard jet acceptance
+    # ---------------------------------------------------------
+    abs_eta = abs(sorted_jets.eta)
+
+    mask = (
+        sorted_jet_id
+        & (abs_eta < 4.7)
+        & (
+            ((sorted_jets.pt > 20.0) & (abs_eta <= 2.5))
+            | (
+                (sorted_jets.pt > 50.0)
+                & (abs_eta > 2.5)
+                & (abs_eta <= 3.0)
+            )
+            | (
+                (sorted_jets.pt > 30.0)
+                & (abs_eta > 3.0)
+                & (abs_eta < 4.7)
+            )
+        )
+    )
+
+    # ---------------------------------------------------------
+    # Lepton cleaning
+    # ---------------------------------------------------------
+    hcand = events.hcand_emu
+
+    for lep_str in ["lep0", "lep1"]:
+
+        lep = ak.firsts(hcand[lep_str])
+
+        seed_idx = ak.fill_none(lep.jetIdx, -1)
+        mask = mask & (jet_idx != seed_idx)
+
+        dphi = _wrap_delta_phi(sorted_jets.phi - lep.phi)
+        deta = sorted_jets.eta - lep.eta
+        dr = np.sqrt(dphi**2 + deta**2)
+
+        mask = mask & ak.fill_none(dr > 0.4, False)
+
+    # These are now the standard selected jets
+    sel_jets = ak.drop_none(
+        ak.mask(sorted_jets, mask)
+    )
+
+    # ---------------------------------------------------------
+    # ParticleNet medium WP
+    # ---------------------------------------------------------
+    year = self.config_inst.x.year
+    tag = self.config_inst.x.tag
+
+    btag_wp = (
+        self.config_inst.x
+        .btag_working_points[year][tag]
+        .particleNet.medium
+    )
+
+    lead = ak.firsts(sel_jets)
+    sublead = ak.firsts(sel_jets[:, 1:])
+
+    lead_jet_is_btagged = (
+        (abs(lead.eta) < 2.5)
+        & (lead.btagPNetB >= btag_wp)
+    )
+
+    sublead_jet_is_btagged = (
+        (abs(sublead.eta) < 2.5)
+        & (sublead.btagPNetB >= btag_wp)
+    )
+
+    lead_jet_is_btagged = ak.fill_none(
+        lead_jet_is_btagged,
+        False,
+    )
+
+    sublead_jet_is_btagged = ak.fill_none(
+        sublead_jet_is_btagged,
+        False,
+    )
+
+    events = set_ak_column(
+        events,
+        "lead_jet_is_btagged",
+        ak.values_astype(lead_jet_is_btagged, np.bool_),
+    )
+
+    events = set_ak_column(
+        events,
+        "sublead_jet_is_btagged",
+        ak.values_astype(sublead_jet_is_btagged, np.bool_),
+    )
+
+    return events

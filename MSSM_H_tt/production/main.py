@@ -27,6 +27,7 @@ from MSSM_H_tt.production.aux_columns import (
     jets_taggable,
     number_b_jet,
     create_jetID_masks,
+    jet_btag_flags,
 )
 from MSSM_H_tt.production.btag_SF import btag_weight_SF
 from MSSM_H_tt.production.top_pt_weight import top_pt_weight, gen_parton_top
@@ -137,6 +138,7 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         number_b_jet,
         create_jetID_masks,
         jet_pt_def,
+        jet_btag_flags,
         jets_taggable,
         btag_weight_SF,
         gen_parton_top,
@@ -170,6 +172,7 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         number_b_jet,
         create_jetID_masks,
         jet_pt_def,
+        jet_btag_flags,
         jets_taggable,
 
         # explicit BDT input columns produced by jet_pt_def and number_b_jet
@@ -177,7 +180,8 @@ def build_recoilcorrmet_passthrough(events: ak.Array) -> ak.Array:
         "mt_bjets",
         "n_jets_clipped",
         "n_bjets_clipped",
-
+        "lead_jet_is_btagged",
+        "sublead_jet_is_btagged",
         btag_weight_SF,
         gen_parton_top,
         top_pt_weight,
@@ -211,6 +215,7 @@ def main_common(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     print("Producing jet variables for plotting...")
     events = self[create_jetID_masks](events, **kwargs)
     events = self[jet_pt_def](events, **kwargs)
+    events = self[jet_btag_flags](events, **kwargs)
     events = self[jets_taggable](events, **kwargs)
     
     events = self[unclustered_met](events, **kwargs)

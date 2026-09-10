@@ -1199,7 +1199,7 @@ def add_run3(ana: od.Analysis,
         "era": f"{campaign.x.year}{campaign.x.tag}",     
     })
     # target file size after MergeReducedEvents in MB
-    cfg.x.reduced_file_size = 512.0
+    cfg.x.reduced_file_size = 1024.0
     from MSSM_H_tt.config.variables import keep_columns
 
     keep_columns(cfg)
