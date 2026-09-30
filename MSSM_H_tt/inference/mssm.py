@@ -1,238 +1,732 @@
 # coding: utf-8
 
 """
-Example inference model.
+Inference model for the MSSM analysis.
 """
 
-import functools
-import law  # for multi_match in the bin-optimization model
+import law
 
-from columnflow.inference import inference_model, ParameterType, ParameterTransformation
+from columnflow.inference import ParameterType
 from columnflow.config_util import get_datasets_from_process
 from MSSM_H_tt.inference.base import HCPModelBase
 from MSSM_H_tt.config.mass_points import read_bdt_masses
 
 
-class hcp_model(HCPModelBase):
+class MSSM_model(HCPModelBase):
     """
-    Default statistical model for Higgs CP analysis
+    Default statistical model for the MSSM analysis.
     """
-    name = "hcp_model"
+
+    # -------------------------------------------------------------------------
+    # Histogram requirements
+    # -------------------------------------------------------------------------
+
+    def get_hist_requirement_variables(
+        self,
+        variables: set[str],
+    ) -> set[str]:
+        """
+        Request exactly the variables needed by the inference model.
+
+        All final BDT discriminants are already produced by the `main`
+        producer, so no mass-block expansion is required.
+        """
+        return set(variables)
+
+    def get_hist_requirement_producers(
+        self,
+        variables: set[str],
+        default_producers: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """
+        All BDT columns and category ids needed for the datacards are
+        already produced by the `main` producer.
+        """
+        return ("main",)
+
+    def get_hist_requirement_variables_for_dataset(
+        self,
+        variables: set[str],
+        dataset_inst,
+    ) -> set[str]:
+        """
+        Request only the variables actually used by the datacard.
+
+        The mass-specific derived inference models already guarantee that
+        signal datasets and requested BDT variables refer to the same mass.
+        """
+        return set(variables)
+
+    # -------------------------------------------------------------------------
+    # Model configuration
+    # -------------------------------------------------------------------------
+
+    name = "MSSM_model"
     add_qcd = True
+
+    # Keep qcd in the datacard, but do not attach shape nuisances to it.
+    use_qcd_shape_uncertainties = False
+    qcd_combine_name = "qcd"
+
+    # Specialization knobs for derived inference models.
+    signal_mass = None
+    signal_kind = None  # None, "ggphi", or "bbphi"
+    bdt_discriminant = None
+
+    bdt_discriminant_aliases = {
+        "sig_vs_disc_ggphi": "D_sig_vs_Disc_ggphi",
+        "sig_vs_disc_bbphi": "D_sig_vs_Disc_bbphi",
+        "dy": "D_DY",
+        "tt": "D_TT",
+    }
+
+    bdt_card_specs = {
+        "D_sig_vs_Disc_ggphi": {
+            "region": "signal",
+            "variable": "D_sig_vs_Disc_ggphi",
+        },
+        "D_sig_vs_Disc_bbphi": {
+            "region": "signal",
+            "variable": "D_sig_vs_Disc_bbphi",
+        },
+        "D_DY": {
+            "region": "dy",
+            "variable": "D_DY",
+        },
+        "D_TT": {
+            "region": "tt",
+            "variable": "D_TT",
+        },
+    }
+
+    # The current config uses ggphi_and_bbphi for the merged signal region.
+    # Keep "signal" as a fallback alias.
+    bdt_region_aliases = {
+        "signal": ("ggphi_and_bbphi", "signal"),
+        "dy": ("dy",),
+        "tt": ("tt",),
+    }
+
     processes: list = []
     config_categories: list = []
     systematics: list = []
 
     # -------------------------------------------------------------------------
-    # process map
+    # Helpers
+    # -------------------------------------------------------------------------
+
+    def get_mass_points(self):
+        masses = list(read_bdt_masses())
+
+        if self.signal_mass is None:
+            return masses
+
+        ref = masses[0]
+        target = (
+            str(self.signal_mass)
+            if isinstance(ref, str)
+            else int(self.signal_mass)
+        )
+
+        if target not in masses:
+            raise ValueError(
+                f"Requested signal mass {target} not found in "
+                f"available mass points: {masses}"
+            )
+
+        return [target]
+
+    def _get_config_insts(self):
+        config_insts = getattr(self, "config_insts", None)
+
+        if config_insts:
+            return list(config_insts)
+
+        config_insts = []
+
+        for cfg in getattr(self, "config", []):
+            if isinstance(cfg, (list, tuple, set)):
+                config_insts.extend(cfg)
+            else:
+                config_insts.append(cfg)
+
+        return config_insts
+
+    @staticmethod
+    def _dedup_keep_order(seq):
+        seen = set()
+        out = []
+
+        for x in seq:
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+
+        return out
+
+    def _resolve_representative_process(
+        self,
+        config_inst,
+        preferred_process,
+        dataset_processes,
+    ):
+        """
+        Return a valid config-process name for process_config_spec(process=...).
+        """
+        if preferred_process is not None:
+            try:
+                config_inst.get_process(preferred_process)
+                return preferred_process
+            except Exception:
+                pass
+
+        if len(dataset_processes) == 1:
+            only_proc = dataset_processes[0]
+
+            try:
+                config_inst.get_process(only_proc)
+                return only_proc
+            except Exception:
+                pass
+
+        return None
+
+    def _get_data_prefixes(self, ch):
+        data_prefixes = {
+            "etau": ["data_egamma_", "data_e_"],
+            "mutau": ["data_mu_", "data_singlemu_"],
+            "emu": [
+                "data_egamma_",
+                "data_mu_",
+                "data_singlemu_",
+            ],
+            "tautau": ["data_tau_"],
+        }
+
+        return data_prefixes.get(
+            ch,
+            [f"data_{ch}_"],
+        )
+
+    def _get_data_datasets(
+        self,
+        config_inst,
+        ch,
+    ):
+        prefixes = self._get_data_prefixes(ch)
+
+        data_datasets = [
+            ds_name
+            for ds_name in config_inst.datasets.names()
+            if any(
+                ds_name.startswith(prefix)
+                for prefix in prefixes
+            )
+        ]
+
+        if not data_datasets:
+            raise ValueError(
+                f"No data datasets found for channel '{ch}' "
+                f"in config '{config_inst.name}'. "
+                f"Available datasets: "
+                f"{list(config_inst.datasets.names())}"
+            )
+
+        return data_datasets
+
+    def _normalize_bdt_discriminant(
+        self,
+        discriminant,
+    ):
+        if discriminant is None:
+            return None
+
+        return self.bdt_discriminant_aliases.get(
+            discriminant,
+            discriminant,
+        )
+
+    def _bdt_region_category_candidates(
+        self,
+        ch: str,
+        region: str,
+        mass,
+    ) -> list[str]:
+
+        region_aliases = self.bdt_region_aliases.get(
+            region,
+            (region,),
+        )
+
+        return [
+            f"cat_{ch}_sr__bdt_{region_name}_M{mass}"
+            for region_name in region_aliases
+        ]
+
+    def _resolve_bdt_region_category(
+        self,
+        config_inst,
+        ch: str,
+        region: str,
+        mass,
+    ) -> str:
+
+        candidates = self._bdt_region_category_candidates(
+            ch,
+            region,
+            mass,
+        )
+
+        for category_name in candidates:
+            try:
+                config_inst.get_category(category_name)
+                return category_name
+            except Exception:
+                pass
+
+        raise ValueError(
+            f"Could not find any BDT category for region "
+            f"'{region}' and mass {mass} "
+            f"in config '{config_inst.name}'. "
+            f"Tried: {candidates}"
+        )
+
+    # -------------------------------------------------------------------------
+    # Process map
     # -------------------------------------------------------------------------
 
     def init_proc_map(self) -> None:
-        # mapping of process names in the datacard ("combine name") to configs and process names in a dict
-        # NOTE: each value is now a list to support multiple processes per combine name
-        process_vs_dataset_names = {
-            "vv": [
-                "ww",
-                "wz",
-                "zz",
-            ],
-            "vvv": [
-                "www",
-                "wwz",
-                "zzz",
-            ],
-            "tt": [
-                "tt_dl",
-                "tt_fh",
-                "tt_sl",
-            ],
-            "st": [
-                "st_tchannel_tbar",
-                "st_tchannel_t",
-                "st_schannel_t_lep",
-                "st_schannel_tbar_lep",
-                "st_twchannel_tbar_fh",
-                "st_twchannel_t_fh",
-                "st_twchannel_tbar_dl",
-                "st_twchannel_tbar_sl",
-                "st_twchannel_t_dl",
-                "st_twchannel_t_sl",
-            ],
-            "SM_higgs": [
-                "h_ggf_htt_sm_prod_sm",
-                "h_vbf_htt_sm",
-            ],
-            "vh_htt": [
-                "zh_htt_flat",
-                "wph_htt_flat",
-                "wmh_htt_flat",
-            ],
-            "wj": [
-                "wj",
-                "wj_1j",
-                "wj_2j",
-                "wj_3j",
-                "wj_4j",
-            ],
-            "dy_tt_m50": [
-                "dy_tt_m50_0j",
-                "dy_tt_m50_1j",
-                "dy_tt_m50_2j",
-            ],
-            "dy_lep": [
-                "dy_lep_m10to50",
-                "dy_ll_m50_0j",
-                "dy_ll_m50_1j",
-                "dy_ll_m50_2j",
-                "dy_ll_m50",
-            ],
+        self.proc_map = {
+            "vv": {
+                "process": "vv",
+                "dataset_processes": [
+                    "ww",
+                    "wz",
+                    "zz",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "vvv": {
+                "process": "vvv",
+                "dataset_processes": [
+                    "www",
+                    "wwz",
+                    "zzz",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "tt": {
+                "process": "tt",
+                "dataset_processes": [
+                    "tt_dl",
+                    "tt_fh",
+                    "tt_sl",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "st": {
+                "process": "st",
+                "dataset_processes": [
+                    "st_tchannel_tbar",
+                    "st_tchannel_t",
+                    "st_schannel_t_lep",
+                    "st_schannel_tbar_lep",
+                    "st_twchannel_tbar_fh",
+                    "st_twchannel_t_fh",
+                    "st_twchannel_tbar_dl",
+                    "st_twchannel_tbar_sl",
+                    "st_twchannel_t_dl",
+                    "st_twchannel_t_sl",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "h_ggf_htt_sm_prod_sm": {
+                "process": "h_ggf_htt_sm_prod_sm",
+                "dataset_processes": [
+                    "h_ggf_htt_sm_prod_sm",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "h_vbf_htt_sm": {
+                "process": "h_vbf_htt_sm",
+                "dataset_processes": [
+                    "h_vbf_htt_sm",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "vh_htt": {
+                "process": "vh_htt",
+                "dataset_processes": [
+                    "zh_htt_flat",
+                    "wph_htt_flat",
+                    "wmh_htt_flat",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "wj": {
+                "process": "w",
+                "dataset_processes": [
+                    "wj",
+                    "wj_1j",
+                    "wj_2j",
+                    "wj_3j",
+                    "wj_4j",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "dy_tt_m50": {
+                "process": "dy_tt_m50",
+                "dataset_processes": [
+                    "dy_tt_m50_0j",
+                    "dy_tt_m50_1j",
+                    "dy_tt_m50_2j",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
+
+            "dy_lep": {
+                "process": "dy_lep",
+                "dataset_processes": [
+                    "dy_lep_m10to50",
+                    "dy_ll_m50_0j",
+                    "dy_ll_m50_1j",
+                    "dy_ll_m50_2j",
+                    "dy_ll_m50",
+                ],
+                "is_signal": False,
+                "is_data_driven": False,
+            },
         }
 
         if self.add_qcd:
-            # keep QCD consistent with list semantics
-            process_vs_dataset_names["QCD"] = ["qcd"]
+            self.proc_map[
+                self.qcd_combine_name
+            ] = {
+                "process": "qcd",
+                "dataset_processes": [],
+                "is_signal": False,
+                "is_data_driven": True,
+            }
 
-        MASS_POINTS = read_bdt_masses()
-        # temporary override, keep your original behavior if you want
-        for m in MASS_POINTS:
-            g = f"h_ggf_htt_{m}"
-            b = f"bbh_htt_{m}"
-            process_vs_dataset_names[g] = [g]
-            process_vs_dataset_names[b] = [b]
+        for m in self.get_mass_points():
 
-        # store as-is (lists)
-        self.proc_map = {}
-        for combine_name, proc_names in process_vs_dataset_names.items():
-            self.proc_map[combine_name] = proc_names
+            if self.signal_kind in (
+                None,
+                "ggphi",
+            ):
+                g = f"ggphi_phitt_{m}"
+
+                self.proc_map[g] = {
+                    "process": g,
+                    "dataset_processes": [g],
+                    "is_signal": True,
+                    "is_data_driven": False,
+                }
+
+            if self.signal_kind in (
+                None,
+                "bbphi",
+            ):
+                b = f"bbphi_phitt_{m}"
+
+                self.proc_map[b] = {
+                    "process": b,
+                    "dataset_processes": [b],
+                    "is_signal": True,
+                    "is_data_driven": False,
+                }
 
     # -------------------------------------------------------------------------
-    # categories (new API)
+    # Categories
     # -------------------------------------------------------------------------
 
     def init_categories(self) -> None:
-        """
-        Define categories using the new InferenceModel API:
+        config_insts = self._get_config_insts()
 
-        - use `config_data` mapping instead of `config_category`, `config_variable`,
-          `config_data_datasets`.
-        - build one entry per config instance via `category_config_spec`.
-        """
-        # get list of config instances from the base class
-        config_insts = getattr(self, "config_insts", None)
         if not config_insts:
-            config_insts = []
-            for cfg in getattr(self, "config", []):
-                if isinstance(cfg, (list, tuple, set)):
-                    config_insts.extend(cfg)
-                else:
-                    config_insts.append(cfg)
+            raise ValueError(
+                "No config instances were supplied "
+                "to the MSSM inference model"
+            )
 
-        # use the first config to deduce the lepton flavor in the channel name
         cfg0 = config_insts[0]
         ch = cfg0.channels.names()[0]
-        lep_name = ch.replace("tau", "")
 
-        MASS_POINTS = read_bdt_masses()
+        # ---------------------------------------------------------------------
+        # One category / one final BDT variable / one mass.
+        #
+        # The final BDT columns and category_ids are already produced by
+        # producer `main`.
+        # ---------------------------------------------------------------------
 
-        for mass in MASS_POINTS:
-            config_data_ggh = {}
-            config_data_bbh = {}
+        if self.bdt_discriminant is not None:
 
-            for config_inst in config_insts:
-                data_datasets = [
-                    ds_name
-                    for ds_name in config_inst.datasets.names()
-                    if f"data_{lep_name}_" in ds_name
+            discriminant = (
+                self._normalize_bdt_discriminant(
+                    self.bdt_discriminant,
+                )
+            )
+
+            if discriminant not in self.bdt_card_specs:
+                valid = sorted(
+                    set(
+                        self.bdt_card_specs.keys()
+                    )
+                    | set(
+                        self.bdt_discriminant_aliases.keys()
+                    )
+                )
+
+                raise ValueError(
+                    f"Invalid bdt_discriminant "
+                    f"'{self.bdt_discriminant}'. "
+                    f"Valid values are: {valid}"
+                )
+
+            masses = self.get_mass_points()
+
+            if len(masses) != 1:
+                raise ValueError(
+                    "The one-category datacard setup requires "
+                    "exactly one mass point. "
+                    "Use a derived model with signal_mass set, "
+                    "e.g. "
+                    "MSSM_model_D_sig_vs_Disc_ggphi_M100."
+                )
+
+            mass = masses[0]
+
+            card_spec = (
+                self.bdt_card_specs[
+                    discriminant
                 ]
-
-                config_data_ggh[config_inst.name] = self.category_config_spec(
-                    category=f"cat_emu_sr__bdt_ggh_M{mass}",
-                    variable=f"bdt_raw_score_ggh_M{mass}",
-                    data_datasets=data_datasets,
-                )
-                config_data_bbh[config_inst.name] = self.category_config_spec(
-                    category=f"cat_emu_sr__bdt_bbh_M{mass}",
-                    variable=f"bdt_raw_score_bbh_M{mass}",
-                    data_datasets=data_datasets,
-                )
-
-            self.add_category(
-                name=f"cat_emu_sr__bdt_ggh_M{mass}",
-                config_data=config_data_ggh,
-                mc_stats=True,
-                empty_bin_value=0.0,
             )
 
-            self.add_category(
-                name=f"cat_emu_sr__bdt_bbh_M{mass}",
-                config_data=config_data_bbh,
-                mc_stats=True,
-                empty_bin_value=0.0,
+            region = card_spec["region"]
+
+            variable_name = (
+                f"bdt_"
+                f"{card_spec['variable']}"
+                f"_M{mass}"
             )
 
-    # -------------------------------------------------------------------------
-    # processes (new API – with proper QCD handling)
-    # -------------------------------------------------------------------------
-
-    def init_processes(self) -> None:
-        """
-        Build processes using the new `config_data` + `process_config_spec` API.
-
-        For each combine process (e.g. "tt"):
-
-        - for QCD (data-driven), add a process without any config_data;
-        - for all others:
-          * loop over all config_insts,
-          * collect all MC datasets belonging to all mapped config processes,
-          * create one `process_config_spec` per config_inst with `mc_datasets`
-            equal to the union of all those datasets,
-          * set `is_signal` if any mapped process name looks like signal.
-        """
-        config_insts = getattr(self, "config_insts", None)
-        if not config_insts:
-            config_insts = []
-            for cfg in getattr(self, "config", []):
-                if isinstance(cfg, (list, tuple, set)):
-                    config_insts.extend(cfg)
-                else:
-                    config_insts.append(cfg)
-
-        for combine_name, procs in self.proc_map.items():
-            proc_names = procs if isinstance(procs, (list, tuple, set)) else [procs]
-
-            # special case: QCD is data-driven, there is no config process "qcd"
-            is_qcd = (combine_name == "QCD") or (
-                len(proc_names) == 1 and proc_names[0] == "qcd"
-            )
-            if is_qcd:
-                # create a process without any config_data; downstream tasks treat it as data-driven
-                self.add_process(
-                    name=combine_name,
-                    is_signal=False,
+            category_name = (
+                self._resolve_bdt_region_category(
+                    config_insts[0],
+                    ch,
+                    region,
+                    mass,
                 )
-                continue
+            )
 
-            # standard MC / signal processes
-            is_signal = False
             config_data = {}
 
             for config_inst in config_insts:
+
+                data_datasets = (
+                    self._get_data_datasets(
+                        config_inst,
+                        ch,
+                    )
+                )
+
+                cfg_category_name = (
+                    self._resolve_bdt_region_category(
+                        config_inst,
+                        ch,
+                        region,
+                        mass,
+                    )
+                )
+
+                config_data[
+                    config_inst.name
+                ] = self.category_config_spec(
+                    category=cfg_category_name,
+                    variable=variable_name,
+                    data_datasets=data_datasets,
+                )
+
+            self.add_category(
+                name=category_name,
+                config_data=config_data,
+                mc_stats=True,
+                empty_bin_value=0.0,
+            )
+
+            return
+
+        # ---------------------------------------------------------------------
+        # Unspecialized model.
+        #
+        # Mostly useful for checks. Production datacards should normally use
+        # one of the derived models defined at the bottom of this file.
+        # ---------------------------------------------------------------------
+
+        base_category_specs = [
+            (
+                "signal",
+                "D_sig",
+            ),
+            (
+                "dy",
+                "D_DY",
+            ),
+            (
+                "tt",
+                "D_TT",
+            ),
+        ]
+
+        for mass in self.get_mass_points():
+
+            for (
+                region,
+                variable,
+            ) in base_category_specs:
+
+                category_name = (
+                    self._resolve_bdt_region_category(
+                        config_insts[0],
+                        ch,
+                        region,
+                        mass,
+                    )
+                )
+
+                config_data = {}
+
+                for config_inst in config_insts:
+
+                    data_datasets = (
+                        self._get_data_datasets(
+                            config_inst,
+                            ch,
+                        )
+                    )
+
+                    cfg_category_name = (
+                        self._resolve_bdt_region_category(
+                            config_inst,
+                            ch,
+                            region,
+                            mass,
+                        )
+                    )
+
+                    config_data[
+                        config_inst.name
+                    ] = self.category_config_spec(
+                        category=cfg_category_name,
+                        variable=(
+                            f"bdt_"
+                            f"{variable}"
+                            f"_M{mass}"
+                        ),
+                        data_datasets=data_datasets,
+                    )
+
+                self.add_category(
+                    name=category_name,
+                    config_data=config_data,
+                    mc_stats=True,
+                    empty_bin_value=0.0,
+                )
+
+    # -------------------------------------------------------------------------
+    # Processes
+    # -------------------------------------------------------------------------
+
+    def init_processes(self) -> None:
+        config_insts = self._get_config_insts()
+
+        for (
+            combine_name,
+            entry,
+        ) in self.proc_map.items():
+
+            preferred_process = (
+                entry["process"]
+            )
+
+            dataset_processes = (
+                entry["dataset_processes"]
+            )
+
+            is_signal = entry.get(
+                "is_signal",
+                False,
+            )
+
+            is_data_driven = entry.get(
+                "is_data_driven",
+                False,
+            )
+
+            config_data = {}
+
+            for config_inst in config_insts:
+
+                rep_process = (
+                    self._resolve_representative_process(
+                        config_inst=config_inst,
+                        preferred_process=preferred_process,
+                        dataset_processes=dataset_processes,
+                    )
+                )
+
+                if rep_process is None:
+                    raise ValueError(
+                        f"Representative process "
+                        f"'{preferred_process}' "
+                        f"for combine process "
+                        f"'{combine_name}' "
+                        f"does not exist in config "
+                        f"'{config_inst.name}'."
+                    )
+
+                if is_data_driven:
+
+                    config_data[
+                        config_inst.name
+                    ] = self.process_config_spec(
+                        process=rep_process,
+                    )
+
+                    continue
+
                 dataset_names = []
 
-                for p in proc_names:
+                for p in dataset_processes:
+
                     try:
-                        proc_inst = config_inst.get_process(p)
+                        config_inst.get_process(p)
                     except Exception:
-                        # only warn for non-QCD processes that truly don't exist in this config
                         print(
-                            f"skipping process {p} in inference model {self.cls_name}, "
-                            f"not found in config {config_inst.name}"
+                            f"skipping dataset process "
+                            f"{p} in inference model "
+                            f"{self.cls_name}, not found "
+                            f"in config "
+                            f"{config_inst.name}"
                         )
                         continue
-
-                    pin = proc_inst.name
-                    if ("h_ggf_htt" in pin) or ("bbh_htt" in pin):
-                        is_signal = True
 
                     dsets = [
                         d.name
@@ -242,28 +736,37 @@ class hcp_model(HCPModelBase):
                             strategy="all",
                         )
                     ]
-                    dataset_names.extend(dsets)
 
-                # de-duplicate, keep order
-                seen = set()
-                dataset_names = [
-                    d for d in dataset_names if not (d in seen or seen.add(d))
-                ]
-
-                if dataset_names:
-                    config_data[config_inst.name] = self.process_config_spec(
-                        process=None,              # rely on datasets only
-                        mc_datasets=dataset_names,
+                    dataset_names.extend(
+                        dsets
                     )
+
+                dataset_names = (
+                    self._dedup_keep_order(
+                        dataset_names
+                    )
+                )
+
+                if not dataset_names:
+                    continue
+
+                config_data[
+                    config_inst.name
+                ] = self.process_config_spec(
+                    process=rep_process,
+                    mc_datasets=dataset_names,
+                )
 
             if not config_data:
                 print(
-                    f"skipping combine process {combine_name} in inference model {self.cls_name}, "
-                    f"no matching datasets in any config"
+                    f"skipping combine process "
+                    f"{combine_name} in inference model "
+                    f"{self.cls_name}, no matching "
+                    f"datasets or config_data "
+                    f"in any config"
                 )
                 continue
 
-            # register the process with the new API
             self.add_process(
                 name=combine_name,
                 is_signal=is_signal,
@@ -271,12 +774,15 @@ class hcp_model(HCPModelBase):
             )
 
     # -------------------------------------------------------------------------
-    # parameters (groups + lumi, as before)
+    # Parameters
     # -------------------------------------------------------------------------
 
     def init_parameters(self) -> None:
-        # define common parameter groups
-        if hasattr(self, "add_parameter_group"):
+
+        if hasattr(
+            self,
+            "add_parameter_group",
+        ):
             for group_name in [
                 "experiment",
                 "theory",
@@ -285,96 +791,704 @@ class hcp_model(HCPModelBase):
                 "signal_norm_xs",
                 "signal_norm_xsbr",
             ]:
-                if not self.has_parameter_group(group_name):
-                    self.add_parameter_group(group_name)
+                if not self.has_parameter_group(
+                    group_name
+                ):
+                    self.add_parameter_group(
+                        group_name
+                    )
 
-        # collect config instances
-        config_insts = getattr(self, "config_insts", None)
-        if config_insts is None:
-            config_insts = []
-            for cfg in getattr(self, "config", []):
-                if isinstance(cfg, (list, tuple, set)):
-                    config_insts.extend(cfg)
-                else:
-                    config_insts.append(cfg)
+        config_insts = (
+            self._get_config_insts()
+        )
 
-        # -------------------------
-        # lumi uncertainties (ADD ONCE)
-        # -------------------------
-        # union of all lumi nuisances across configs
+        if not config_insts:
+            raise ValueError(
+                "No config instances were supplied "
+                "to the MSSM inference model"
+            )
+
+        cfg0 = config_insts[0]
+
+        ch_name = (
+            cfg0.channels.names()[0]
+            if getattr(
+                cfg0,
+                "channels",
+                None,
+            )
+            else ""
+        )
+
+        has_tau = (
+            "tau" in ch_name
+            and ch_name != "emu"
+        )
+
+        has_mu = (
+            "mu" in ch_name
+            or ch_name in (
+                "emu",
+                "mutau",
+            )
+        )
+
+        has_e = (
+            "e" in ch_name
+            or ch_name in (
+                "emu",
+                "etau",
+            )
+        )
+
+        all_processes = [
+            proc_name
+            for proc_name in self.proc_map.keys()
+            if self.has_process(
+                proc_name
+            )
+        ]
+
+        non_qcd_processes = [
+            proc_name
+            for proc_name in all_processes
+            if proc_name
+            != self.qcd_combine_name
+        ]
+
+        # ---------------------------------------------------------------------
+        # Luminosity rate uncertainties
+        # ---------------------------------------------------------------------
+
         lumi_uncs = []
         seen_uncs = set()
+
         for cfg in config_insts:
-            for unc_name in cfg.x.luminosity.uncertainties:
+
+            for (
+                unc_name
+            ) in cfg.x.luminosity.uncertainties:
+
                 if unc_name not in seen_uncs:
-                    seen_uncs.add(unc_name)
-                    lumi_uncs.append(unc_name)
+                    seen_uncs.add(
+                        unc_name
+                    )
+                    lumi_uncs.append(
+                        unc_name
+                    )
 
-        # process selector (for new API)
-        process = ["*", "!QCD*"]
-        kwargs = {}
-        if hasattr(self, "process_matches"):
-            # usually you want the UNION across configs; use any() as match mode
-            process = self.process_matches(configs=config_insts, skip_qcd=True)
-            kwargs["process_match_mode"] = any
-
-        group = (
-            ["experiment", "rate_nuisances"]
-            if hasattr(self, "add_parameter_group")
+        rate_group = (
+            [
+                "experiment",
+                "rate_nuisances",
+            ]
+            if hasattr(
+                self,
+                "add_parameter_group",
+            )
             else "experiment"
         )
 
-        # add each lumi nuisance once; sanity-check effects across configs
         for unc_name in lumi_uncs:
-            ref_eff = None
-            ref_cfg = None
-            for cfg in config_insts:
-                lumi = cfg.x.luminosity
-                if unc_name not in lumi.uncertainties:
-                    continue
-                eff = lumi.get(names=unc_name, direction=("down", "up"), factor=True)
-                if ref_eff is None:
-                    ref_eff, ref_cfg = eff, cfg.name
-                else:
-                    if eff != ref_eff:
-                        raise ValueError(
-                            f"lumi nuisance '{unc_name}' has different effects across configs "
-                            f"(e.g. {ref_cfg}: {ref_eff}, {cfg.name}: {eff}). "
-                            "Either harmonize the lumi config or use per-config parameter names."
-                        )
 
-            # now register once
+            effects_by_config = {}
+
+            for cfg in config_insts:
+
+                lumi = cfg.x.luminosity
+
+                if (
+                    unc_name
+                    not in lumi.uncertainties
+                ):
+                    continue
+
+                effects_by_config[
+                    cfg.name
+                ] = lumi.get(
+                    names=unc_name,
+                    direction=(
+                        "down",
+                        "up",
+                    ),
+                    factor=True,
+                )
+
+            if not effects_by_config:
+                continue
+
+            unique_effects = []
+
+            for (
+                eff
+            ) in effects_by_config.values():
+
+                if eff not in unique_effects:
+                    unique_effects.append(
+                        eff
+                    )
+
+            if len(unique_effects) != 1:
+
+                details = ", ".join(
+                    f"{cfg_name}: {eff}"
+                    for (
+                        cfg_name,
+                        eff,
+                    ) in effects_by_config.items()
+                )
+
+                raise ValueError(
+                    f"luminosity nuisance "
+                    f"'{unc_name}' has different "
+                    f"effects across configs "
+                    f"({details}). "
+                    f"The current combined-category "
+                    f"inference model cannot encode "
+                    f"different per-config lnN "
+                    f"coefficients for one correlated "
+                    f"nuisance without first keeping "
+                    f"the eras separate or representing "
+                    f"luminosity with dedicated "
+                    f"per-config varied shapes. "
+                    f"Refusing to build a numerically "
+                    f"incorrect datacard."
+                )
+
             self.add_parameter(
                 unc_name,
                 type=ParameterType.rate_gauss,
-                effect=ref_eff,
-                process=process,
-                group=group,
-                **kwargs,
+                effect=unique_effects[0],
+                process=non_qcd_processes,
+                group=rate_group,
             )
 
+        # ---------------------------------------------------------------------
+        # Shape systematics
+        # ---------------------------------------------------------------------
 
-# -------------------------------------------------------------------------
-# inference-model variants
-# -------------------------------------------------------------------------
+        theory_shape_sources = [
+            "CMS_PS_ISR",
+            "CMS_PS_FSR",
+            "CMS_Scale_muR",
+            "CMS_Scale_muF",
+        ]
 
+        def _has_shift_source(
+            cfg,
+            src: str,
+        ) -> bool:
 
-@hcp_model.inference_model
-def hcp_model_no_shifts(self):
-    """
-    Analogue of `default_no_shifts` in the HH model.
-    """
-    print("Producing inference models without shape-based shifts")
+            try:
+                cfg.get_shift(
+                    f"{src}_up"
+                )
+                cfg.get_shift(
+                    f"{src}_down"
+                )
+                return True
+            except Exception:
+                return False
 
-    # initialize as in the nominal model
-    super(hcp_model_no_shifts, self).init_func()
+        def _nuis_name(
+            src: str,
+        ) -> str:
 
-    # remove all parameters that require a shift source other than nominal
-    for category_name, process_name, parameter in self.iter_parameters():
-        remove = (
-            (parameter.type.is_shape and not parameter.transformations.any_from_rate)
-            or (parameter.type.is_rate and parameter.transformations.any_from_shape)
+            if src == "tau_weight":
+                return "CMS_eff_t_SF"
+
+            if src == "muon_weight":
+                return "CMS_eff_mu_SF"
+
+            if src == "electron_weight":
+                return "CMS_eff_e_SF"
+
+            if src == "Trigger_SF_weight":
+                return (
+                    "CMS_bbtt_eff_trig_SF"
+                )
+
+            if src == "top_pt_weight":
+                return (
+                    "CMS_top_pT_reweighting"
+                )
+
+            if src == "pu_weight":
+                return "CMS_pu_SF"
+
+            if src == "zpt_weight":
+                return (
+                    "CMS_zpt_reweighting"
+                )
+
+            if src == "jer":
+                return "CMS_res_j"
+
+            if src == "unclustered":
+                return (
+                    "CMS_scale_met_unclustered"
+                )
+
+            if src == "recoilresp":
+                return (
+                    "CMS_met_recoil_response"
+                )
+
+            if src == "recoilres":
+                return (
+                    "CMS_met_recoil_resolution"
+                )
+
+            if src.startswith("jec_"):
+                return (
+                    f"CMS_scale_j_"
+                    f"{src[4:]}"
+                )
+
+            if src.startswith(
+                "btag_weight_"
+            ):
+                return (
+                    f"CMS_btag_"
+                    f"{src[len('btag_weight_'):]}"
+                )
+
+            return src
+
+        def _default_shape_scope() -> list[str]:
+
+            if (
+                self.use_qcd_shape_uncertainties
+            ):
+                return list(
+                    all_processes
+                )
+
+            return list(
+                non_qcd_processes
+            )
+
+        def _recoil_shape_scope() -> list[str]:
+
+            default = (
+                _default_shape_scope()
+            )
+
+            recoil_processes = {
+                "dy_tt_m50",
+                "dy_lep",
+                "wj",
+                "h_ggf_htt_sm_prod_sm",
+                "h_vbf_htt_sm",
+                "vh_htt",
+            }
+
+            return [
+                p
+                for p in default
+                if (
+                    p in recoil_processes
+                    or p.startswith(
+                        "ggphi_phitt_"
+                    )
+                    or p.startswith(
+                        "bbphi_phitt_"
+                    )
+                )
+            ]
+
+        def _theory_process_patterns(
+            src: str,
+        ) -> tuple[str, ...]:
+            """
+            Collect theory applicability patterns
+            from all configs.
+
+            The config currently uses the historical
+            name `wjets` while the combine process
+            is called `wj`.
+            """
+
+            patterns = []
+
+            for cfg in config_insts:
+                try:
+                    patterns.extend(
+                        cfg.x
+                        .theory_uncertainty_processes
+                        .get(
+                            src,
+                            (),
+                        )
+                    )
+                except Exception:
+                    pass
+
+            aliases = {
+                "wjets": "wj",
+            }
+
+            return tuple(
+                self._dedup_keep_order(
+                    aliases.get(
+                        pattern,
+                        pattern,
+                    )
+                    for pattern in patterns
+                )
+            )
+
+        def _process_scope(
+            src: str,
+        ) -> list[str]:
+
+            default = (
+                _default_shape_scope()
+            )
+
+            if src in theory_shape_sources:
+
+                theory_process_patterns = (
+                    _theory_process_patterns(
+                        src
+                    )
+                )
+
+                return [
+                    p
+                    for p in default
+                    if law.util.multi_match(
+                        p,
+                        theory_process_patterns,
+                    )
+                ]
+
+            if src == "top_pt_weight":
+                return [
+                    p
+                    for p in ["tt"]
+                    if p in default
+                ]
+
+            if src == "zpt_weight":
+                return [
+                    p
+                    for p in [
+                        "dy_tt_m50",
+                        "dy_lep",
+                    ]
+                    if p in default
+                ]
+
+            if src == "unclustered":
+                return default
+
+            if src in (
+                "recoilresp",
+                "recoilres",
+            ):
+                return (
+                    _recoil_shape_scope()
+                )
+
+            if src.startswith(
+                "btag_weight_"
+            ):
+                return default
+
+            if (
+                src.startswith("jec_")
+                or src == "jer"
+            ):
+                return default
+
+            if src == "pu_weight":
+                return default
+
+            if src == "tau_weight":
+                return (
+                    default
+                    if has_tau
+                    else []
+                )
+
+            if src == "muon_weight":
+                return (
+                    default
+                    if has_mu
+                    else []
+                )
+
+            if src == "electron_weight":
+                return (
+                    default
+                    if has_e
+                    else []
+                )
+
+            if src == "Trigger_SF_weight":
+                return (
+                    default
+                    if (
+                        has_mu
+                        or has_e
+                        or has_tau
+                    )
+                    else []
+                )
+
+            return default
+
+        # ---------------------------------------------------------------------
+        # Base shift sources
+        # ---------------------------------------------------------------------
+
+        expected_sources = [
+            "tau_weight",
+            "muon_weight",
+            "electron_weight",
+            "Trigger_SF_weight",
+            "pu_weight",
+            "top_pt_weight",
+            "zpt_weight",
+            "jer",
+            "unclustered",
+            "recoilresp",
+            "recoilres",
+            *theory_shape_sources,
+        ]
+
+        # Collect weight-shift sources
+        # from every config.
+        for cfg in config_insts:
+            try:
+                expected_sources.extend(
+                    cfg.x
+                    .histogram_weight_shift_sources
+                )
+            except Exception:
+                pass
+
+        # Collect JEC sources from every era.
+        for cfg in config_insts:
+            try:
+                expected_sources.extend(
+                    f"jec_{src}"
+                    for src in (
+                        cfg.x
+                        .jec
+                        .Jet
+                        .uncertainty_sources
+                    )
+                )
+            except Exception:
+                pass
+
+        # Collect b-tag sources from every era.
+        for cfg in config_insts:
+            try:
+                expected_sources.extend(
+                    f"btag_weight_{unc}"
+                    for unc in (
+                        cfg.x.btag_unc_names
+                    )
+                )
+            except Exception:
+                pass
+
+        expected_sources = (
+            self._dedup_keep_order(
+                expected_sources
+            )
         )
+
+        shape_sources = [
+            src
+            for src in expected_sources
+            if (
+                src not in lumi_uncs
+                and src != "nominal"
+                and any(
+                    _has_shift_source(
+                        cfg,
+                        src,
+                    )
+                    for cfg in config_insts
+                )
+            )
+        ]
+
+        exp_group = (
+            [
+                "experiment",
+                "shape_nuisances",
+            ]
+            if hasattr(
+                self,
+                "add_parameter_group",
+            )
+            else "experiment"
+        )
+
+        th_group = (
+            [
+                "theory",
+                "shape_nuisances",
+            ]
+            if hasattr(
+                self,
+                "add_parameter_group",
+            )
+            else "theory"
+        )
+
+        def _is_theory_like(
+            src: str,
+        ) -> bool:
+
+            return (
+                src
+                in theory_shape_sources
+            )
+
+        added = {}
+
+        for src in shape_sources:
+
+            proc_scope = (
+                _process_scope(src)
+            )
+
+            if not proc_scope:
+                continue
+
+            nuis = (
+                _nuis_name(src)
+            )
+
+            if (
+                nuis in added
+                and added[nuis] != src
+            ):
+                raise ValueError(
+                    f"nuisance name collision: "
+                    f"'{nuis}' would be used "
+                    f"for both '{added[nuis]}' "
+                    f"and '{src}'. "
+                    f"Adjust _nuis_name mapping."
+                )
+
+            added[nuis] = src
+
+            config_data = {
+                cfg.name:
+                    self.parameter_config_spec(
+                        shift_source=src
+                    )
+                for cfg in config_insts
+                if _has_shift_source(
+                    cfg,
+                    src,
+                )
+            }
+
+            if not config_data:
+                continue
+
+            self.add_parameter(
+                nuis,
+                type=ParameterType.shape,
+                config_data=config_data,
+                process=proc_scope,
+                group=(
+                    th_group
+                    if _is_theory_like(src)
+                    else exp_group
+                ),
+            )
+
+        # ---------------------------------------------------------------------
+        # Explicit safety: remove shape nuisances from QCD only
+        # ---------------------------------------------------------------------
+
+        if (
+            self.add_qcd
+            and not self.use_qcd_shape_uncertainties
+        ):
+
+            for (
+                category_name,
+                process_name,
+                parameter,
+            ) in list(
+                self.iter_parameters()
+            ):
+
+                if process_name not in (
+                    "qcd",
+                    "QCD",
+                ):
+                    continue
+
+                remove = (
+                    parameter.type.is_shape
+                    or
+                    parameter
+                    .transformations
+                    .any_from_shape
+                )
+
+                if remove:
+                    self.remove_parameter(
+                        parameter.name,
+                        process=process_name,
+                        category=category_name,
+                    )
+
+
+# -----------------------------------------------------------------------------
+# Inference-model variants
+# -----------------------------------------------------------------------------
+
+
+@MSSM_model.inference_model
+def MSSM_model_no_shifts(self):
+    print(
+        "Producing inference models "
+        "without shape-based shifts"
+    )
+
+    super(
+        MSSM_model_no_shifts,
+        self,
+    ).init_func()
+
+    for (
+        category_name,
+        process_name,
+        parameter,
+    ) in self.iter_parameters():
+
+        remove = (
+            (
+                parameter.type.is_shape
+                and not (
+                    parameter
+                    .transformations
+                    .any_from_rate
+                )
+            )
+            or
+            (
+                parameter.type.is_rate
+                and (
+                    parameter
+                    .transformations
+                    .any_from_shape
+                )
+            )
+        )
+
         if remove:
             self.remove_parameter(
                 parameter.name,
@@ -382,36 +1496,53 @@ def hcp_model_no_shifts(self):
                 category=category_name,
             )
 
-    # repeat the cleanup
     self.init_cleanup()
 
 
-@hcp_model.inference_model(empty_bin_value=0)
-def hcp_model_bin_opt(self):
-    """
-    Bin-optimization variant, analogous to `default_bin_opt` in the HH model.
-    """
-    # set everything up as in the default model
-    super(hcp_model_bin_opt, self).init_func()
+@MSSM_model.inference_model(
+    empty_bin_value=0
+)
+def MSSM_model_bin_opt(self):
+
+    super(
+        MSSM_model_bin_opt,
+        self,
+    ).init_func()
 
     keep_parameters = {
         "BR_*",
         "QCDscale_*",
-        "bbH_norm_*",
+        "bbphi_norm_*",
         "lumi_*",
         "CMS_bbtt_eff_trig_*",
         "CMS_btag_*",
         "CMS_eff_e_*",
         "CMS_eff_mu_*",
         "CMS_eff_t_*",
+        "CMS_pu_*",
+        "CMS_res_j",
+        "CMS_scale_j_*",
+        "CMS_scale_met_unclustered",
+        "CMS_met_recoil_*",
         "CMS_top_pT_reweighting",
+        "CMS_zpt_reweighting",
+        "CMS_PS_*",
+        "CMS_Scale_*",
         "pdf_*",
         "ps_*",
         "scale_*",
     }
 
-    for category_name, process_name, parameter in self.iter_parameters():
-        if not law.util.multi_match(parameter.name, keep_parameters):
+    for (
+        category_name,
+        process_name,
+        parameter,
+    ) in self.iter_parameters():
+
+        if not law.util.multi_match(
+            parameter.name,
+            keep_parameters,
+        ):
             self.remove_parameter(
                 parameter.name,
                 process=process_name,
@@ -419,3 +1550,67 @@ def hcp_model_bin_opt(self):
             )
 
     self.init_cleanup()
+
+
+# -----------------------------------------------------------------------------
+# Mass- and production-specific derived models
+# -----------------------------------------------------------------------------
+
+
+for _m in read_bdt_masses():
+
+    # ggphi extraction:
+    # merged signal region,
+    # ggphi-only signal.
+    globals()[
+        f"MSSM_model_D_sig_vs_Disc_ggphi_M{_m}"
+    ] = MSSM_model.derive(
+        f"MSSM_model_D_sig_vs_Disc_ggphi_M{_m}",
+        cls_dict={
+            "signal_mass": _m,
+            "signal_kind": "ggphi",
+            "bdt_discriminant":
+                "D_sig_vs_Disc_ggphi",
+        },
+    )
+
+    # bbphi extraction:
+    # merged signal region,
+    # bbphi-only signal.
+    globals()[
+        f"MSSM_model_D_sig_vs_Disc_bbphi_M{_m}"
+    ] = MSSM_model.derive(
+        f"MSSM_model_D_sig_vs_Disc_bbphi_M{_m}",
+        cls_dict={
+            "signal_mass": _m,
+            "signal_kind": "bbphi",
+            "bdt_discriminant":
+                "D_sig_vs_Disc_bbphi",
+        },
+    )
+
+    # DY-region datacard:
+    # both signals at the selected mass.
+    globals()[
+        f"MSSM_model_D_DY_M{_m}"
+    ] = MSSM_model.derive(
+        f"MSSM_model_D_DY_M{_m}",
+        cls_dict={
+            "signal_mass": _m,
+            "signal_kind": None,
+            "bdt_discriminant": "D_DY",
+        },
+    )
+
+    # TT-region datacard:
+    # both signals at the selected mass.
+    globals()[
+        f"MSSM_model_D_TT_M{_m}"
+    ] = MSSM_model.derive(
+        f"MSSM_model_D_TT_M{_m}",
+        cls_dict={
+            "signal_mass": _m,
+            "signal_kind": None,
+            "bdt_discriminant": "D_TT",
+        },
+    )

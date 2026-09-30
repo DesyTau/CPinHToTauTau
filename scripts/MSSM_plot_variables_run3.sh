@@ -3,8 +3,8 @@ source ./common_run3_MSSM.sh #to access set_common_vars() function
 #The following function defines config, processes, version and datasets variables
 set_common_vars "$1"
 args=(
-        # --configs $config
         --config $config
+        # --config $config
         --processes $processes
         --datasets $datasets
         --version $version
@@ -19,9 +19,9 @@ args=(
         --variables $variables
         --pilot True
         --file-types pdf,png
-	--hist-hooks qcd
+	#--hist-hooks qcd
         --general-settings "cms-label=pw" #yscale=log,
-        --process-settings "dy_lep,color=#FFFF00:h_ggf_htt_100,unstack,scale=100,color=#FF0000:bbh_htt_100,unstack,scale=10000,color=#0000FF"
+        --process-settings "dy_lep,color=#FFFF00:ggphi_phitt_100,unstack,scale=1000,color=#FF0000:bbphi_phitt_100,unstack,scale=1000,color=#0000FF"
         #"h_ggf_htt_80,unstack,scale=stack,color=#FF0000:h_ggf_htt_100,unstack,scale=stack,color=#0000FF:h_ggf_htt_120,unstack,scale=stack"
         "${@:2}"
     )

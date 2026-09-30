@@ -51,11 +51,28 @@ def pu_weight(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     ):
         # get the inputs for this type of variation
         variable_map_syst = {**variable_map, "weights": syst}
-        inputs = [variable_map_syst[inp.name] for inp in self.pileup_corrector.inputs]
-        # evaluate and store the produced column
+        inputs = [
+            variable_map_syst[inp.name]
+            for inp in self.pileup_corrector.inputs
+        ]
+
+        # evaluate the pileup correction
         pu_weight = self.pileup_corrector.evaluate(*inputs)
-        pu_weight[pu_weight > 300] = 0 # remove events with abnormally high pileup weights (should be few per dataset)
-        events = set_ak_column(events, rename_systs[column_name], pu_weight, value_type=np.float32)
+
+        # remove events with abnormally high pileup weights
+        pu_weight = ak.where(
+            pu_weight > 300,
+            0.0,
+            pu_weight,
+        )
+
+        # store the produced column
+        events = set_ak_column(
+            events,
+            rename_systs[column_name],
+            pu_weight,
+            value_type=np.float32,
+        )
     
     return events
 

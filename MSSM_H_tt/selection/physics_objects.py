@@ -209,7 +209,6 @@ def electron_selection(
         "electron_eta_2p5"        : abs(events.Electron.eta) < 2.5,
         "electron_dxy_0p045"      : abs(events.Electron.dxy) < 0.045,
         "electron_dz_0p2"         : abs(events.Electron.dz) < 0.2,
-        #"electron_pfRelIso03_all" : events.Electron.pfRelIso03_all < 0.15,
         "electron_mva_iso_wp90"   : mva_iso_wp90 == 1,
         "electron_missing_hits"   : number_of_missing_hits < 2,
         "electron_pass_conVeto"   : events.Electron.convVeto == 1,
@@ -297,80 +296,6 @@ def electron_selection(
         aux=selection_steps,
     ), good_electron_indices, ele_emu_indices, single_veto_electron_indices, second_ele_veto_emu_indices, OC_veto_electron_indices
 
-
-
-# ------------------------------------------------------------------------------------------------------- #
-# Tau Selection
-# Reference:
-#   https://cms.cern.ch/iCMS/analysisadmin/cadilines?id=2325&ancode=HIG-20-006&tp=an&line=HIG-20-006
-#   http://cms.cern.ch/iCMS/jsp/openfile.jsp?tp=draft&files=AN2019_192_v15.pdf
-# ------------------------------------------------------------------------------------------------------- #
-@selector(
-    uses={
-        # Tau nano columns
-        f"Tau.{var}" for var in [
-            "pt", "eta", "phi", "dz",
-            "idDeepTau2018v2p5VSe", "idDeepTau2018v2p5VSmu", "idDeepTau2018v2p5VSjet",
-            "decayMode","decayModePNet", 'ipLengthSig'
-        ]
-    },
-    produces={
-        f"Tau.{var}" for var in [
-            "rawIdx","ip_sig"
-        ]
-    },
-    exposed=False,
-)
-def tau_selection(
-        self: Selector,
-        events: ak.Array,
-        electron_indices: Optional[ak.Array]=None,
-        muon_indices    : Optional[ak.Array]=None,
-        **kwargs
-) -> tuple[ak.Array, SelectionResult, ak.Array]:
-    """
-    Tau selection returning two sets of indidces for default and veto muons.
-    
-    References:
-      - 
-    """
-    tau_local_indices = ak.local_index(events.Tau)
-    events = set_ak_column(events, "Tau.rawIdx", tau_local_indices)
-    events = set_ak_column(events, "Tau.ip_sig", events.Tau.ipLengthSig)
-   
-
-    # https://cms-nanoaod-integration.web.cern.ch/integration/cms-swmaster/data106Xul17v2_v10_doc.html#Tau
-    
-    # Definition of the working points of the DeepTau 
-    deep_tau_vs_e_jet_wps = self.config_inst.x.deep_tau.vs_e_jet_wps
-    deep_tau_vs_mu_wps = self.config_inst.x.deep_tau.vs_mu_wps
-
-    good_selections = {
-        "tau_pt_30"     : events.Tau.pt > 30,
-        "tau_eta_2p3"   : abs(events.Tau.eta) < 2.3,
-        "tau_dz_0p2"    : abs(events.Tau.dz) < 0.2,
-        "DeepTauVSjet"  : events.Tau.idDeepTau2018v2p5VSjet >= deep_tau_vs_e_jet_wps["VVVLoose"], 
-        "DeepTauVSe"    : events.Tau.idDeepTau2018v2p5VSe   >= deep_tau_vs_e_jet_wps["VVVLoose"],
-        "DeepTauVSmu"   : events.Tau.idDeepTau2018v2p5VSmu  >= deep_tau_vs_mu_wps["VLoose"],
-        "DecayMode"     : ((events.Tau.decayMode == 0) 
-                           | (events.Tau.decayMode == 1)
-                           | (events.Tau.decayMode == 10)
-                           | (events.Tau.decayMode == 11))
-    }
-    # pt sorted indices for converting masks to indices
-    sorted_indices = ak.argsort(events.Tau.pt, axis=-1, ascending=False)
-    tau_mask  = ak.ones_like(events.Tau.pt, dtype=np.bool_)
-    
-    for cut in good_selections.keys():
-        tau_mask = tau_mask & good_selections[cut] 
-        
-    # convert to sorted indices
-    selected_tau_idx = sorted_indices[tau_mask[sorted_indices]]
-    selected_tau_idx = ak.values_astype(selected_tau_idx, np.int32)
-
-    return events, selected_tau_idx
-
-
 # ------------------------------------------------------------------------------------------------------- #
 # Jet Selection
 # Reference:
@@ -381,7 +306,7 @@ def tau_selection(
     uses={ f"Jet.{var}" for var in 
         [
             "pt", "eta", "phi", "mass",
-            "jetId", "btagDeepFlavB",
+            "jetId", "btagPNetB",
         ]} | {optional("Jet.puId")} ,
     exposed=False,
 )
@@ -422,8 +347,8 @@ def jet_selection(
     good_jet_indices = ak.values_astype(good_jet_indices, np.int32)
 
     # b-tagged jets, tight working point
-    btag_wp = self.config_inst.x.btag_working_points[year].deepjet.medium
-    b_jet_mask = jet_mask & (events.Jet.btagDeepFlavB >= btag_wp)
+    btag_wp = self.config_inst.x.btag_working_points[year].particleNet.medium
+    b_jet_mask = jet_mask & (events.Jet.btagPNetB >= btag_wp)
     selection_steps["btag"] = ak.fill_none(b_jet_mask, False)
 
     # bjet veto

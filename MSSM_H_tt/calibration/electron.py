@@ -46,7 +46,7 @@ def electron_smearing_scaling(self: Calibrator, events: ak.Array, **kwargs) -> a
         #Create get energy scale correction for each tau
         electron_scaling_nom = np.ones_like(electron_pt, dtype=np.float32)
 
-        if self.config_inst.x.year in [2022,2023]:
+        if self.config_inst.x.year in [2022,2023,2024]:
             electron_scaling_args = lambda events: (eta,r9)
             # electron_scaling_args = lambda events, syst: ( syst,
             #                                                 gain,
@@ -73,6 +73,11 @@ def electron_smearing_scaling(self: Calibrator, events: ak.Array, **kwargs) -> a
             electron_smearing_args = lambda events, syst: (syst,
                                                         eta,
                                                         r9)
+        elif self.config_inst.x.year == 2024:
+            electron_smearing_args = lambda events, syst: (syst,
+                                                        electron_pt,
+                                                        r9,
+                                                        eta)
 
         electron_smearing_nom = self.electron_smearing_corrector.evaluate(*electron_smearing_args(events, syst))
         rng = np.random.default_rng(seed=125)  

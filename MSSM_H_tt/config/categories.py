@@ -52,7 +52,9 @@ def add_categories(config: od.Config,
                     kwargs['aux'][aux_key] = reg_map_tagged
                 else:
                     kwargs['aux'][aux_key] = aux_content
-        if ('aux' in child_cat.keys()) and parent_cat.aux:
+        if 'aux' in child_cat.keys():
+            if 'aux' not in kwargs:
+                kwargs['aux'] = {}
             for (aux_key, aux_content) in child_cat['aux'].items():
                 if aux_key == 'fit_var' and isinstance(aux_content, str):
                     aux_content = [aux_content]
@@ -84,29 +86,6 @@ def add_categories(config: od.Config,
         selection=["cat_incl"],
         label="inclusive",
     )
-    if channel=='mutau':
-        add_category(
-            config,
-            name="cat_mutau",
-            id=2,
-            selection=["cat_mutau"],
-            label=r"$\mu\tau$ inclusive",)
-        
-        
-    if channel=='tautau':
-        add_category(
-            config,
-            name="cat_tautau",
-            id=2,
-            selection=["cat_tautau"],
-            label=r"$\mu\tau$ inclusive",)  
-    if channel=='etau':
-        add_category(
-            config,
-            name="cat_etau",
-            id=3,
-            selection=["cat_etau"],
-            label=r"$e\tau$ inclusive")
     if channel=='emu':
         add_category(
             config,
@@ -148,9 +127,9 @@ def add_categories(config: od.Config,
         #                     'aux'       : {'apply_ff': ''}},
         # "ar_yields"      : {'selection' : ["lep_iso", "os_charge"],},
         #categories for QCD estimation via classic ABCD method 
-        "abcd_ar"       : { 'selection' : ["lep_iso", "ss_charge","D_zeta_cut"], 'label' : "same sign region"},
-        "abcd_dr_num"   : { 'selection' : ["lep_inv_iso", "os_charge","D_zeta_cut"]},
-        "abcd_dr_den"   : { 'selection' : ["lep_inv_iso", "ss_charge","D_zeta_cut"]},
+        "abcd_ar"       : { 'selection' : ["lep_iso", "ss_charge"], 'label' : "same sign region"},
+        "abcd_dr_num"   : { 'selection' : ["lep_inv_iso", "os_charge"]},
+        "abcd_dr_den"   : { 'selection' : ["lep_inv_iso", "ss_charge"]},
         
         # "sr_no_mt"      : { 'selection' : ["lep_iso", "os_charge"],
         #                     'label'     : "signal region no mt",
@@ -171,73 +150,92 @@ def add_categories(config: od.Config,
     add_base_categories(config, channel, category_map, base_selection)
     
     from MSSM_H_tt.config.mass_points import read_bdt_masses
-    MASS_POINTS = read_bdt_masses()
-    
-    # bdt_cats_map = DotDict.wrap({})
-    # for m in MASS_POINTS:
-    #     bdt_cats_map[f"bdt_sig_M{m}"] = DotDict.wrap({
-    #         'selection': [f"bdt_cat_sig_M{m}"],
-    #         'label': f" \n bdt cat sig (M={m})",
-    #     })
-    #     bdt_cats_map[f"bdt_dy_M{m}"] = DotDict.wrap({
-    #         'selection': [f"bdt_cat_dy_M{m}"],
-    #         'label': f" \n bdt cat dy (M={m})",
-    #     })
-    #     bdt_cats_map[f"bdt_tt_M{m}"] = DotDict.wrap({
-    #         'selection': [f"bdt_cat_tt_M{m}"],
-    #         'label': f" \n bdt cat tt (M={m})",
-    #     })
-    #     bdt_cats_map[f"bdt_wj_M{m}"] = DotDict.wrap({
-    #         'selection': [f"bdt_cat_wj_M{m}"],
-    #         'label': f" \n bdt cat wj (M={m})",
-    #     })
-    
-    child_category_map  = DotDict.wrap({
-        "nj0"    : {'selection' : ["Zero_b_jets"], 'label'     : f" \n $n_{{jets}}= 0$",},
-        "nj1"    : {'selection' : ["At_least_1_b_jets"], 'label'     : f" \n $n_{{jets}}>= 1$",},  
-        })
-    
-    create_child_categories(config,
-                        parent_categories=config.categories.names(),
-                        child_category_map=child_category_map)
-    # MASS_POINTS = [100]
-    bdt_cats_map = DotDict.wrap({})
-    for m in MASS_POINTS:
-        bdt_cats_map[f"bdt_ggh_M{m}"] = DotDict.wrap({
-            "selection": [f"bdt_cat_ggh_M{m}"],
-            "label": f" \n bdt cat ggh (M={m})",
-        })
-        bdt_cats_map[f"bdt_bbh_M{m}"] = DotDict.wrap({
-            "selection": [f"bdt_cat_bbh_M{m}"],
-            "label": f" \n bdt cat bbh (M={m})",
-        })
-        bdt_cats_map[f"bdt_dy_M{m}"] = DotDict.wrap({
-            "selection": [f"bdt_cat_dy_M{m}"],
-            "label": f" \n bdt cat dy (M={m})",
-        })
-        bdt_cats_map[f"bdt_tt_M{m}"] = DotDict.wrap({
-            "selection": [f"bdt_cat_tt_M{m}"],
-            "label": f" \n bdt cat tt (M={m})",
-        })
-        # bdt_cats_map[f"bdt_wj_M{m}"] = DotDict.wrap({
-        #     "selection": [f"bdt_cat_wj_M{m}"],
-        #     "label": f" \n bdt cat wj (M={m})",
-        # })
-        # bdt_cats_map[f"bdt_st_M{m}"] = DotDict.wrap({
-        #     "selection": [f"bdt_cat_st_M{m}"],
-        #     "label": f" \n bdt cat st (M={m})",
-        # })
-        # bdt_cats_map[f"bdt_mb_M{m}"] = DotDict.wrap({
-        #     "selection": [f"bdt_cat_mb_M{m}"],
-        #     "label": f" \n bdt cat mb (M={m})",
-        # })
 
+    MASS_POINTS = read_bdt_masses()
+
+    # Merged three-region BDT approach.
+    #
+    # The selections below are produced dynamically in categorization/main.py.
+    # They use the raw four-class probabilities from the BDT-score producer:
+    #
+    #   P_sig = P_ggphi + P_bbphi
+    #
+    # and define the fit regions through:
+    #
+    #   signal region : P_sig is larger than both P_DY and P_TT
+    #   DY region     : P_DY  is larger than both P_sig and P_TT
+    #   TT region     : P_TT  is larger than both P_sig and P_DY
+    #
+    # This matches the 10-feature training setup, whose adaptive post-processing
+    # produces the signal-region flattened 2D variables:
+    #
+    #   bdt_D_sig_vs_Disc_ggphi_M{mass}
+    #   bdt_D_sig_vs_Disc_bbphi_M{mass}
+    #
+    # The old standalone ggphi and bbphi four-class fit categories are not added
+    # here, because they would overlap with the merged signal-like region. They
+    # can still exist as diagnostic categorizers in categorization/main.py.
+
+    bdt_cats_map = DotDict.wrap({})
+
+    bdt_regions = {
+        "ggphi_and_bbphi": {
+            "label": "ggϕ + bbϕ",
+            "selection": "bdt_cat_ggphi_and_bbphi",
+            "fit_var": [
+                "D_sig_vs_Disc_ggphi",
+                "D_sig_vs_Disc_bbphi",
+            ],
+        },
+        "dy": {
+            "label": "DY",
+            "selection": "bdt_cat_dy",
+            "fit_var": "D_DY",
+        },
+        "tt": {
+            "label": "tt̄",
+            "selection": "bdt_cat_tt",
+            "fit_var": "D_TT",
+        },
+    }
+
+    for m in MASS_POINTS:
+        for region, spec in bdt_regions.items():
+            fit_vars = spec["fit_var"]
+
+            if isinstance(fit_vars, str):
+                fit_vars = [fit_vars]
+
+            fit_vars = [
+                f"bdt_{fit_var}_M{m}"
+                for fit_var in fit_vars
+            ]
+
+            bdt_cats_map[f"bdt_{region}_M{m}"] = DotDict.wrap({
+                "selection": [
+                    f"{spec['selection']}_M{m}",
+                ],
+                "label": f"BDT cat. {spec['label']} (M={m})",
+                "aux": {
+                    "fit_var": fit_vars,
+                },
+            })
+
+    bdt_parent_categories = [
+        f"cat_{channel}_sr",
+        f"cat_{channel}_abcd_ar",
+        f"cat_{channel}_abcd_dr_num",
+        f"cat_{channel}_abcd_dr_den",
+        ]
+    
+    create_child_categories(
+        config,
+        parent_categories=bdt_parent_categories,
+        child_category_map=bdt_cats_map,
+    )
 
     # create_child_categories(
-    # config,
-    # parent_categories=config.categories.names(),
-    # child_category_map=bdt_cats_map)
-    # if channel=='emu':
-    #     #debugging
-    #     from IPython import embed; embed()
-    
+    #     config,
+    #     parent_categories=config.categories.names(),
+    #     child_category_map=bdt_cats_map,
+    # )
