@@ -174,6 +174,7 @@ fi
 default_workflow="htcondor"
 pilot="False"
 signal_masses=""
+parallel_masses=4
 calibrate_workflow=""
 select_workflow=""
 reduce_workflow=""
@@ -475,6 +476,29 @@ while (( i < ${#raw_extra_args[@]} )); do
                 echo "ERROR: --signal-masses requires all or a comma-separated mass list." >&2
                 exit 1
             }
+            ((i += 1))
+            ;;
+        # ---------------------------------------------------------------------
+        # Parallel signal masses
+        # ---------------------------------------------------------------------
+        --parallel-masses)
+            if (( i + 1 >= ${#raw_extra_args[@]} )); then
+                echo "ERROR: --parallel-masses requires a positive integer." >&2
+                exit 1
+            fi
+            parallel_masses="${raw_extra_args[$((i + 1))]}"
+            if ! [[ "$parallel_masses" =~ ^[1-9][0-9]*$ ]]; then
+                echo "ERROR: --parallel-masses requires a positive integer." >&2
+                exit 1
+            fi
+            ((i += 2))
+            ;;
+        --parallel-masses=*)
+            parallel_masses="${arg#*=}"
+            if ! [[ "$parallel_masses" =~ ^[1-9][0-9]*$ ]]; then
+                echo "ERROR: --parallel-masses requires a positive integer." >&2
+                exit 1
+            fi
             ((i += 1))
             ;;
         --pilot)
@@ -1289,41 +1313,57 @@ run_command() {
 
 launch_signal_masses() {
     local mass_text mass vars dataset_name arg child_index failed=0
+    local next_mass=0 finished_pid="" status=0 pending_pid
     local script_path="${SCRIPT_DIR}/${BASH_SOURCE[0]##*/}"
-    local logdir="${SCRIPT_DIR}/logs_signal_hists/${config_option}/${sample_group}/${stage}"
-    local -a masses=() pids=() child_args=() mass_args=()
+    local -a masses=() child_args=() mass_args=()
+    local -A active_masses=()
 
     case "$sample_group" in
         ggphi|ggf|bbphi|bbh|signal) ;;
-        *) echo "ERROR: --signal-masses requires ggphi, bbphi or signal." >&2; return 1 ;;
+        *)
+            echo "ERROR: --signal-masses requires ggphi, bbphi or signal." >&2
+            return 1
+            ;;
     esac
+
     case "$stage" in
         produce|create-hists|merge-hists|merge-shifted|check-hist-inputs) ;;
-        *) echo "ERROR: --signal-masses applies to production and histogram stages." >&2; return 1 ;;
+        *)
+            echo "ERROR: --signal-masses applies to production and histogram stages." >&2
+            return 1
+            ;;
     esac
+
     if has_extra_option --variables || has_extra_option --datasets || [[ -n "$histogram_bdt_masses" ]]; then
         echo "ERROR: --signal-masses automatically supplies matching BDT variables and datasets." >&2
         echo "Use --signal-masses without --variables, --datasets or --histogram-bdt-masses." >&2
         return 1
     fi
 
+    # -------------------------------------------------------------------------
+    # Resolve requested masses
+    # -------------------------------------------------------------------------
     mass_text="$(python - "$signal_masses" <<'PY'
 import sys
 from MSSM_H_tt.config.mass_points import read_bdt_masses
 
 grid = read_bdt_masses()
 choice = sys.argv[1].strip()
+
 try:
     selected = grid if choice == "all" else list(dict.fromkeys(int(m.strip()) for m in choice.split(",")))
 except ValueError:
     raise SystemExit("ERROR: --signal-masses requires all or integer mass points.")
+
 if not selected or any(m not in grid for m in selected):
     raise SystemExit("ERROR: --signal-masses contains an unconfigured mass point.")
+
 print(*selected, sep="\n")
 PY
     )" || return 1
 
     mapfile -t masses <<< "$mass_text"
+
     for mass in "${masses[@]}"; do
         [[ "$mass" =~ ^[1-9][0-9]*$ ]] || {
             echo "ERROR: invalid configured signal mass '$mass'." >&2
@@ -1331,17 +1371,28 @@ PY
         }
     done
 
+    # -------------------------------------------------------------------------
+    # Prepare child arguments
+    # -------------------------------------------------------------------------
     for ((child_index = 0; child_index < ${#raw_extra_args[@]}; child_index++)); do
         arg="${raw_extra_args[$child_index]}"
+
         case "$arg" in
-            --signal-masses) ((child_index += 1)) ;;
-            --signal-masses=*) ;;
-            *) child_args+=("$arg") ;;
+            --signal-masses|--parallel-masses)
+                ((child_index += 1))
+                ;;
+            --signal-masses=*|--parallel-masses=*)
+                ;;
+            *)
+                child_args+=("$arg")
+                ;;
         esac
     done
+
     if ! has_extra_option --workers; then
         child_args+=(--workers 1)
     fi
+
     case "$stage" in
         produce|create-hists|merge-hists|check-hist-inputs)
             if ! has_extra_option --shifts; then
@@ -1350,31 +1401,113 @@ PY
             ;;
     esac
 
-    mkdir -p "$logdir" || return 1
-    echo "Launching ${#masses[@]} mass commands for $config_option / $sample_group / $stage."
-    echo "Workflow default: $default_workflow; pilot: $pilot; logs: $logdir"
+    # -------------------------------------------------------------------------
+    # Launch signal masses with limited concurrency
+    # -------------------------------------------------------------------------
+    echo
+    echo "================================================================================"
+    echo "Signal mass processing"
+    echo "Stage                : $stage"
+    echo "Config               : $config_option"
+    echo "Sample group         : $sample_group"
+    echo "Total masses         : ${#masses[@]}"
+    echo "Parallel masses      : $parallel_masses"
+    echo "Workers per mass     : $(get_extra_option_value --workers || echo 1)"
+    echo "================================================================================"
+    echo
 
-    for mass in "${masses[@]}"; do
-        case "$sample_group" in
-            ggphi|ggf) dataset_name="ggphi_phitt_${mass}" ;;
-            bbphi|bbh) dataset_name="bbphi_phitt_${mass}" ;;
-            signal) dataset_name="ggphi_phitt_${mass},bbphi_phitt_${mass}" ;;
-        esac
-        vars="bdt_D_sig_vs_Disc_ggphi_M${mass},bdt_D_sig_vs_Disc_bbphi_M${mass},bdt_D_DY_M${mass},bdt_D_TT_M${mass}"
-        mass_args=(--datasets "$dataset_name")
-        [[ "$stage" == "produce" ]] || mass_args+=(--variables "$vars")
+    # Refill available slots whenever a mass finishes.
+    while (( next_mass < ${#masses[@]} || ${#active_masses[@]} > 0 )); do
 
-        bash "$script_path" "$config_option" "$sample_group" "$stage" \
-            "${child_args[@]}" "${mass_args[@]}" >"${logdir}/M${mass}.log" 2>&1 &
-        pids+=("$!")
-    done
+        # Launch new masses until the concurrency limit is reached.
+        while (( next_mass < ${#masses[@]} && ${#active_masses[@]} < parallel_masses )); do
 
-    for ((child_index = 0; child_index < ${#pids[@]}; child_index++)); do
-        if ! wait "${pids[$child_index]}"; then
-            echo "ERROR: M${masses[$child_index]} failed; see ${logdir}/M${masses[$child_index]}.log" >&2
-            failed=1
+            mass="${masses[$next_mass]}"
+
+            case "$sample_group" in
+                ggphi|ggf)
+                    dataset_name="ggphi_phitt_${mass}"
+                    ;;
+                bbphi|bbh)
+                    dataset_name="bbphi_phitt_${mass}"
+                    ;;
+                signal)
+                    dataset_name="ggphi_phitt_${mass},bbphi_phitt_${mass}"
+                    ;;
+            esac
+
+            vars="bdt_D_sig_vs_Disc_ggphi_M${mass},bdt_D_sig_vs_Disc_bbphi_M${mass},bdt_D_DY_M${mass},bdt_D_TT_M${mass}"
+
+            mass_args=(--datasets "$dataset_name")
+
+            if [[ "$stage" != "produce" ]]; then
+                mass_args+=(--variables "$vars")
+            fi
+
+            echo "[M${mass}] Starting $stage"
+
+            # Stream output to the terminal without creating extra log files.
+            PYTHONUNBUFFERED=1 bash "$script_path" \
+                "$config_option" "$sample_group" "$stage" \
+                "${child_args[@]}" "${mass_args[@]}" 2>&1 \
+                | sed -u "s/^/[M${mass}] /" &
+
+            active_masses["$!"]="$mass"
+
+            ((next_mass += 1))
+        done
+
+        # ---------------------------------------------------------------------
+        # Wait for any active mass to finish
+        # ---------------------------------------------------------------------
+        finished_pid=""
+
+        if wait -n -p finished_pid "${!active_masses[@]}"; then
+            status=0
+        else
+            status=$?
         fi
+
+        if [[ -z "$finished_pid" ]]; then
+            echo "ERROR: could not identify the completed mass process." >&2
+
+            for pending_pid in "${!active_masses[@]}"; do
+                if ! wait "$pending_pid"; then
+                    echo "ERROR: M${active_masses[$pending_pid]} failed." >&2
+                fi
+            done
+
+            failed=1
+            break
+        fi
+
+        # ---------------------------------------------------------------------
+        # Check completion status
+        # ---------------------------------------------------------------------
+        mass="${active_masses[$finished_pid]}"
+
+        if (( status != 0 )); then
+            echo "[M${mass}] ERROR: $stage failed (exit status $status)." >&2
+            failed=1
+        else
+            echo "[M${mass}] Finished successfully."
+        fi
+
+        unset "active_masses[$finished_pid]"
+
     done
+
+    echo
+    echo "================================================================================"
+
+    if (( failed == 0 )); then
+        echo "All signal masses completed successfully."
+    else
+        echo "Signal processing finished with errors."
+    fi
+
+    echo "================================================================================"
+
     return "$failed"
 }
 
