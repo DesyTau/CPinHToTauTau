@@ -314,6 +314,7 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
         Important fix:
         - For plotting tasks, use only the current branch category.
         - Do not loop over task.categories, because that is the full requested list.
+        - Support single-shift plots without requiring task.shift_sources.
         """
 
         output = {}
@@ -321,6 +322,8 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
         def up_down_once(sources):
             bases = []
             for s in sources:
+                if s == "nominal":
+                    continue
                 if s.endswith("_down"):
                     s = s[:-5]
                 elif s.endswith("_up"):
@@ -371,7 +374,13 @@ def add_hist_hooks(analysis: "od.Analysis") -> None:
                 shift_sources = tuple(ax.value(i) for i in range(ax.size))
             else:
                 sr_cats = _resolve_current_categories(task, category_name=category_name)
-                shift_sources = up_down_once(task.shift_sources)
+                sources = getattr(task, "shift_sources", None)
+                if sources is None:
+                    # Single-shift plots expose shift rather than shift_sources.
+                    # Keep nominal for the data-minus-MC subtraction.
+                    shift_sources = tuple(dict.fromkeys(("nominal", getattr(task, "shift", "nominal"))))
+                else:
+                    shift_sources = up_down_once(sources)
 
             full_d = get_data_hist(hists)
             full_mc = get_mc_hist(hists)
