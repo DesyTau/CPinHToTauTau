@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import Iterable, List
 from columnflow.util import maybe_import
 import re
+import hashlib
 
 _SIGNAL_DATASET_MASS_RE = re.compile(
     r"^(?:ggphi|bbphi)_phitt_([0-9]+)$"
@@ -186,6 +187,48 @@ BDT_CARD_HIST_VARIABLES = (
     "D_DY",
     "D_TT",
 )
+
+# Histogram storage only. Do not change BDT_MASS_BLOCK_SIZE, which controls
+# producer selection and would change ProduceColumns dependencies.
+BDT_HISTOGRAM_STORAGE_BLOCK_SIZE = 4
+
+
+def get_bdt_histogram_storage_groups(variables, dataset=None):
+    """Resolve variables to fixed four-mass blocks, or one matching signal mass.
+
+    Blocks always use the full configured mass grid, including for filtered
+    campaigns. A single-variable plot therefore reads the same file as the
+    histogram-production campaign.
+    """
+    signal_mass = get_mssm_signal_mass(dataset)
+    groups = {}
+    for variable in variables:
+        variable = str(variable)
+        match = _BDT_CARD_HIST_VARIABLE_RE.fullmatch(variable)
+        if match is None:
+            key = "var_" + hashlib.sha256(variable.encode("utf-8")).hexdigest()[:16]
+            groups[key] = (variable,)
+            continue
+
+        mass = int(match.group(2))
+        if signal_mass is not None:
+            if mass != signal_mass:
+                raise ValueError(
+                    f"signal dataset mass {signal_mass} does not match histogram variable {variable!r}",
+                )
+            if mass not in read_bdt_masses():
+                raise ValueError(f"signal mass {mass} is not in the configured BDT mass grid")
+            block = (mass,)
+        else:
+            block = get_bdt_mass_block(mass, block_size=BDT_HISTOGRAM_STORAGE_BLOCK_SIZE)
+
+        key = "bdt_M" + "_".join(map(str, block))
+        groups[key] = tuple(
+            f"bdt_{discriminant}_M{block_mass}"
+            for block_mass in block
+            for discriminant in BDT_CARD_HIST_VARIABLES
+        )
+    return groups
 
 _BDT_CARD_HIST_VARIABLE_RE = re.compile(
     r"^bdt_"

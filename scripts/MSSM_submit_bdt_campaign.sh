@@ -393,7 +393,25 @@ if [[ -n "$ONLY_MASSES_CSV" ]]; then
 else
     MASSES=( "${ALL_MASSES[@]}" )
 fi
-mapfile -t BG_BLOCKS < <(make_blocks "$BLOCK_SIZE" "${MASSES[@]}")
+storage_block_size="$(python - <<'PY'
+from MSSM_H_tt.config.mass_points import BDT_HISTOGRAM_STORAGE_BLOCK_SIZE
+print(BDT_HISTOGRAM_STORAGE_BLOCK_SIZE)
+PY
+)" || die "could not load histogram storage block size"
+[[ "$BLOCK_SIZE" == "$storage_block_size" ]] || die "--block-size must be ${storage_block_size} to match fixed histogram storage blocks"
+
+# Select whole blocks from the full mass grid, even with --only-masses.
+# This makes campaign output reusable by single-variable plots/datacards.
+mapfile -t BG_BLOCKS < <(python - "${MASSES[@]}" <<'PY'
+import sys
+from MSSM_H_tt.config.mass_points import get_bdt_mass_blocks, BDT_HISTOGRAM_STORAGE_BLOCK_SIZE
+requested = set(map(int, sys.argv[1:]))
+for block in get_bdt_mass_blocks(BDT_HISTOGRAM_STORAGE_BLOCK_SIZE):
+    if requested.intersection(block):
+        print(",".join(map(str, block)))
+PY
+)
+(( ${#BG_BLOCKS[@]} > 0 )) || die "no background histogram storage blocks were resolved"
 mapfile -t SIGNAL_BLOCKS < <(make_blocks "$SIGNAL_BLOCK_SIZE" "${MASSES[@]}")
 # --- Eras and sample groups ---
 IFS=',' read -r -a ERAS <<< "$ERAS_CSV"

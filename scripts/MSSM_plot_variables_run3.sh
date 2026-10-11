@@ -21,7 +21,7 @@ args=(
         --file-types pdf,png
 	#--hist-hooks qcd
         --general-settings "cms-label=pw" #yscale=log,
-        --process-settings "dy_lep,color=#FFFF00:ggphi_phitt_100,unstack,scale=1000,color=#FF0000:bbphi_phitt_100,unstack,scale=1000,color=#0000FF"
+        # --process-settings "dy_lep,color=#FFFF00:ggphi_phitt_100,unstack,scale=1000,color=#FF0000:bbphi_phitt_100,unstack,scale=1000,color=#0000FF"
         #"h_ggf_htt_80,unstack,scale=stack,color=#FF0000:h_ggf_htt_100,unstack,scale=stack,color=#0000FF:h_ggf_htt_120,unstack,scale=stack"
         "${@:2}"
     )

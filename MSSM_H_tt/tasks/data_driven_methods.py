@@ -23,6 +23,7 @@ from columnflow.tasks.framework.parameters import last_edge_inclusive_inst
 from columnflow.tasks.reduction import ReducedEventsUser
 from columnflow.tasks.production import ProduceColumns
 from columnflow.tasks.histograms import MergeHistograms
+from columnflow.histogram_io import load_histogram
 from columnflow.util import dev_sandbox, DotDict
 
 
@@ -138,7 +139,9 @@ class ComputeFakeFactors(
             print(f'*** config {cfg_name} ***')
             for (dataset_name, the_input) in inputs[cfg_name].items():
                 # load input histograms per dataset
-                the_hist = the_input["collection"][0]['hists'].targets[self.variables[0]].load(formatter='pickle')
+                the_hist = load_histogram(
+                    the_input["collection"][0]["hists"], self.variables[0], the_cfg, dataset=dataset_name,
+                )
 
                 ds = the_cfg.get_dataset(dataset_name)
                 proc = the_cfg.get_process(ds.processes.names()[0])

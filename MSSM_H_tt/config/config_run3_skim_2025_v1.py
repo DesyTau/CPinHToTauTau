@@ -33,6 +33,7 @@ def add_run3(ana: od.Analysis,
     from MSSM_H_tt.config.mass_points import (
         read_bdt_masses,
         expand_bdt_histogram_variables,
+        get_bdt_histogram_storage_groups,
     )
     # get all root processes
     procs = get_root_processes_from_campaign(campaign)
@@ -51,6 +52,7 @@ def add_run3(ana: od.Analysis,
     cfg.x.histogram_variable_expander = (
         expand_bdt_histogram_variables
         )  
+    cfg.x.histogram_storage_groups = get_bdt_histogram_storage_groups
     cfg.x.histogram_weight_shift_sources = {
         "muon_weight",
         "electron_weight",
@@ -534,13 +536,13 @@ def add_run3(ana: od.Analysis,
             "tt_sl",
             ],
         "st": [
-            "TbarWplusto4Q",
-            "TWminusto4Q",
-            "TbarWplusto2L2Nu", 
-            "TbarWplustoLNu2Q",
-            "TWminusto2L2Nu", 
-            "TWminustoLNu2Q", 
-            ],
+            "st_twchannel_tbar_fh",  # TbarWplusto4Q
+            "st_twchannel_t_fh",     # TWminusto4Q
+            "st_twchannel_tbar_dl",  # TbarWplusto2L2Nu
+            "st_twchannel_tbar_sl",  # TbarWplustoLNu2Q
+            "st_twchannel_t_dl",     # TWminusto2L2Nu
+            "st_twchannel_t_sl",     # TWminustoLNu2Q
+        ],
         "SM_higgs": [
             "h_ggf_htt_sm_prod_sm",
             "h_vbf_htt_sm",
@@ -601,7 +603,8 @@ def add_run3(ana: od.Analysis,
                             ],
          "qcd": ["qcd"],
         }
-
+    from MSSM_H_tt.config.plot_process_groups import add_grouped_plot_processes
+    add_grouped_plot_processes(cfg)
     # dataset groups for conveniently looping over certain datasets
     # (used in wrapper_factory and during plotting)
     cfg.x.dataset_groups = {}
@@ -1605,4 +1608,3 @@ def add_run3(ana: od.Analysis,
     
     from data_driven.hist_hooks import add_hist_hooks
     add_hist_hooks(ana)
-        

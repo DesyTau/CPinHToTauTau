@@ -194,226 +194,69 @@ def _get_bdt_category_ids(
     return category_ids
 
 
-def _get_ordinary_category_projection(
-    self: HistProducer,
-):
-    """
-    Build the category projection used for ordinary, non-BDT variables.
+def _get_ordinary_category_projection(self: HistProducer, task=None):
+    """Keep unique parent regions and selected BDT leaf regions."""
+    selected_masses = tuple(sorted({int(mass) for mass in getattr(task, "histogram_bdt_masses", ())}))
+    cache_key = ("ordinary", selected_masses)
+    if cache_key in self._category_cache:
+        return self._category_cache[cache_key]
 
-    The BDT child categories are projected back onto their original
-    parent analysis regions using one reference BDT mass.
-
-    This prevents an ordinary variable such as emu_mt_tot from counting
-    the same event once for every BDT mass hypothesis.
-
-    Background/data:
-        use the first active BDT mass as the reference partition.
-
-    MSSM signal:
-        get_bdt_masses_for_dataset restricts the active masses to the
-        signal's own mass, so that mass is used as reference.
-    """
-
-    if self._ordinary_category_projection is not None:
-        return self._ordinary_category_projection
-
-    active_masses = get_bdt_masses_for_dataset(
-        self.dataset_inst,
-        read_bdt_masses(),
-    )
-
+    active_masses = get_bdt_masses_for_dataset(self.dataset_inst, read_bdt_masses())
     if not active_masses:
-        raise RuntimeError(
-            "no active BDT masses found for dataset "
-            f"'{self.dataset_inst.name}'"
-        )
+        raise RuntimeError(f"no active BDT masses found for dataset '{self.dataset_inst.name}'")
+    reference_suffix = f"_M{active_masses[0]}"
+    retained_masses = set(selected_masses).intersection(active_masses)
+    passthrough, retained_leaves, children_by_parent = [], [], {}
 
-    reference_mass = int(
-        active_masses[0]
-    )
-
-    mass_suffix = (
-        f"_M{reference_mass}"
-    )
-
-    passthrough_category_ids = []
-
-    # Mapping:
-    #
-    #   parent category id
-    #       -> BDT child ids at the reference mass
-    #
-    bdt_children_by_parent = {}
-
-    for category in (
-        self.config_inst.get_leaf_categories()
-    ):
-
-        category_name = category.name
-
-        # Ordinary leaf category that does not belong to
-        # the mass-dependent BDT hierarchy.
-        if "__bdt_" not in category_name:
-
-            passthrough_category_ids.append(
-                category.id
-            )
-
+    for category in self.config_inst.get_leaf_categories():
+        name = category.name
+        if "__bdt_" not in name:
+            passthrough.append(category.id)
             continue
-
-        # For ordinary variables only use one BDT partition.
-        if not category_name.endswith(
-            mass_suffix
-        ):
-            continue
-
-        parent_name = category_name.split(
-            "__bdt_",
-            1,
-        )[0]
-
-        parent = self.config_inst.get_category(
-            parent_name
-        )
-
-        bdt_children_by_parent.setdefault(
-            parent.id,
-            [],
-        ).append(
-            category.id
-        )
+        match = re.search(r"_M([0-9]+)$", name)
+        if match and int(match.group(1)) in retained_masses:
+            retained_leaves.append(category.id)
+        if name.endswith(reference_suffix):
+            parent = self.config_inst.get_category(name.split("__bdt_", 1)[0])
+            children_by_parent.setdefault(parent.id, []).append(category.id)
 
     projection = {
-        "reference_mass": reference_mass,
-
-        "passthrough": tuple(
-            passthrough_category_ids
-        ),
-
-        "bdt_parents": {
-            parent_id: tuple(child_ids)
-            for parent_id, child_ids
-            in bdt_children_by_parent.items()
-        },
+        "passthrough": tuple(sorted(set(passthrough))),
+        "bdt_parents": {parent: tuple(sorted(set(children))) for parent, children in children_by_parent.items()},
+        "bdt_leaves": tuple(sorted(set(retained_leaves))),
     }
-
-    self._ordinary_category_projection = (
-        projection
-    )
-
+    self._category_cache[cache_key] = projection
     return projection
 
 
-def _project_ordinary_category_ids(
-    self: HistProducer,
-    category_ids,
-):
-    """
-    Convert mass-dependent BDT leaf categories into a unique
-    parent-category representation for ordinary variables.
-
-    Example:
-
-        cat_emu_sr__bdt_ggphi_and_bbphi_M60
-        cat_emu_sr__bdt_dy_M60
-        cat_emu_sr__bdt_tt_M60
-
-    are collectively projected onto:
-
-        cat_emu_sr
-
-    Each parent category is inserted at most once per event.
-    """
-
-    projection = (
-        _get_ordinary_category_projection(
-            self
-        )
-    )
-
+def _project_ordinary_category_ids(self: HistProducer, category_ids, task=None):
+    """Fill each parent once and retain each requested BDT leaf once."""
+    projection = _get_ordinary_category_projection(self, task)
     pieces = []
 
-    def append_category_presence(
-        source_ids,
-        target_id,
-    ):
-        """
-        Add target_id once for each event belonging to at least
-        one category in source_ids.
-        """
-
-        mask = np.zeros(
-            len(category_ids),
-            dtype=np.bool_,
-        )
-
+    def append_category_presence(source_ids, target_id):
+        mask = np.zeros(len(category_ids), dtype=np.bool_)
         for source_id in source_ids:
+            mask |= ak.to_numpy(ak.any(category_ids == source_id, axis=1))
+        values = ak.Array(np.full(len(category_ids), target_id, dtype=np.int64))
+        pieces.append(ak.singletons(ak.mask(values, mask)))
 
-            mask = (
-                mask
-                | ak.to_numpy(
-                    ak.any(
-                        category_ids
-                        == source_id,
-                        axis=1,
-                    )
-                )
-            )
+    for category_id in projection["passthrough"]:
+        append_category_presence((category_id,), category_id)
+    for parent_id, child_ids in projection["bdt_parents"].items():
+        append_category_presence(child_ids, parent_id)
 
-        target_values = ak.Array(
-            np.full(
-                len(category_ids),
-                target_id,
-                dtype=np.int64,
-            )
-        )
+    if projection["bdt_leaves"]:
+        flat_ids = ak.to_numpy(ak.flatten(category_ids, axis=1))
+        mask = ak.unflatten(np.isin(flat_ids, projection["bdt_leaves"]), ak.num(category_ids, axis=1))
+        leaves = ak.sort(category_ids[mask], axis=1)
+        unique = ak_concatenate_safe([
+            ak.ones_like(leaves[:, :1], dtype=np.bool_),
+            leaves[:, 1:] != leaves[:, :-1],
+        ], axis=1)
+        pieces.append(leaves[unique])
 
-        target_values = ak.mask(
-            target_values,
-            mask,
-        )
-
-        pieces.append(
-            ak.singletons(
-                target_values
-            )
-        )
-
-    # Preserve ordinary categories that are already leaves.
-    for category_id in (
-        projection["passthrough"]
-    ):
-
-        append_category_presence(
-            (category_id,),
-            category_id,
-        )
-
-    # Collapse the BDT regions of the reference mass
-    # onto their common parent analysis region.
-    for (
-        parent_id,
-        child_ids,
-    ) in projection[
-        "bdt_parents"
-    ].items():
-
-        append_category_presence(
-            child_ids,
-            parent_id,
-        )
-
-    if not pieces:
-        return category_ids[
-            :,
-            :0,
-        ]
-
-    return ak_concatenate_safe(
-        pieces,
-        axis=1,
-    )
-
+    return ak_concatenate_safe(pieces, axis=1) if pieces else category_ids[:, :0]
 
 # -------------------------------------------------------------------------
 # Histogram event weights
@@ -894,28 +737,20 @@ def httcp_create_hist(
     task: law.Task,
     **kwargs,
 ):
-    """
-    Create one histogram for the requested variable tuple.
-
-    Categories, processes and shifts are represented by histogram axes.
-    No separate histogram object is created for each category.
-    """
-
+    category_ids = []
+    if getattr(task, "histogram_bdt_masses", ()) and not _uses_bdt_card_variable(variables):
+        projection = _get_ordinary_category_projection(self, task)
+        category_ids = list(dict.fromkeys((
+            *projection["passthrough"],
+            *projection["bdt_parents"],
+            *projection["bdt_leaves"],
+        )))
     return create_hist_from_variables(
         *variables,
         categorical_axes=(
-            (
-                "category",
-                "intcat",
-            ),
-            (
-                "process",
-                "intcat",
-            ),
-            (
-                "shift",
-                "intcat",
-            ),
+            ("category", "intcat", category_ids),
+            ("process", "intcat"),
+            ("shift", "intcat"),
         ),
         weight=True,
     )
@@ -987,12 +822,8 @@ def httcp_fill_hist(
         )
 
     else:
-
-        categories_to_fill = (
-            _project_ordinary_category_ids(
-                self,
-                data["category"],
-            )
+        categories_to_fill = _project_ordinary_category_ids(
+            self, data["category"], task,
         )
 
     # ------------------------------------------------------------------
