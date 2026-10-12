@@ -127,11 +127,13 @@ setup_httcp() {
     #
 
     export LAW_HOME="${LAW_HOME:-${HTTCP_BASE}/.law}"
-    export LAW_CONFIG_FILE="${LAW_CONFIG_FILE:-${HTTCP_BASE}/law.cfg}"
+    export LAW_CONFIG_FILE="${LAW_CONFIG_FILE:-${HTTCP_BASE}/law_lpn.cfg}"
 
     if which law &> /dev/null; then
         # source law's bash completion scipt
-        source "$( law completion )" ""
+	 if [ -n "${BASH_VERSION}" ] && [ -z "${ZSH_VERSION}" ]; then
+		 source "$( law completion )" ""
+	fi
 
         # silently index
         law index -q

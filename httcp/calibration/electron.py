@@ -116,5 +116,12 @@ def electron_smearing_scaling_setup(
     correction_set = correctionlib.CorrectionSet.from_string(
         bundle.files.electron_scaling_smearing.load(formatter="gzip").decode("utf-8"),
     )
-    self.electron_scaling_corrector = correction_set[self.config_inst.x.electron_sf.scale.corrector]
-    self.electron_smearing_corrector = correction_set[self.config_inst.x.electron_sf.smearing.corrector]
+    year = self.config_inst.x.year
+    e_scale_corrector = self.config_inst.x.electron_sf.scale.corrector
+    e_smearing_corrector = self.config_inst.x.electron_sf.smearing.corrector
+    if year == 2024:
+        self.electron_scaling_corrector = correction_set.compound[e_scale_corrector]
+        self.electron_smearing_corrector = correction_set[e_smearing_corrector]
+    else:
+        self.electron_scaling_corrector = correction_set[e_scale_corrector]
+        self.electron_smearing_corrector = correction_set[e_smearing_corrector]

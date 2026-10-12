@@ -25,8 +25,12 @@ def add_met_filters(config: od.Config) -> None:
         "Flag.BadPFMuonDzFilter", # +
         "Flag.hfNoisyHitsFilter", # + 
         "Flag.eeBadScFilter", # +
-        "Flag.ecalBadCalibFilter", # + (not in the code of IC)
+        # "Flag.ecalBadCalibFilter", # + (not in the code of IC)
     ]
+
+    if config.x.year not in (2022, 2023):
+        filters.append("Flag.ecalBadCalibFilter") 
+    
     # same filter for mc and data, but still separate
     filters = {
         "mc": filters,

@@ -91,13 +91,13 @@ def stitching_weight_setup(
     self.weight_dict = None
     dataset = self.dataset_inst.name 
     if dataset in self.config_inst.x.stitch_samples:
-        start_str = [s for s in ["DYto2L","WtoLNu"] if dataset.startswith(s)]
-        self.var = 'NpNLO' if start_str == "DYto2L" else 'Njets'
+        start_str = next((s for s in ["DYto2L", "DYto2E", "DYto2Mu", "WtoLNu"] if dataset.startswith(s) ), None)
+        self.var = 'NpNLO' if start_str in {"DYto2L", "DYto2E", "DYto2Mu"} else 'Njets'
         self.config_inst.campaign.ecm
         stitch_samples = {get_nj(key): (get_xsec(self, key), 
                                         self.config_inst.get_dataset(key).n_events)
                           for key in self.config_inst.x.stitch_samples 
-                          if key.startswith(*start_str)} 
+                          if key.startswith(start_str)} 
         (xsec_incl, n_evt_incl) = stitch_samples.pop(-1)
         self.weight_dict = {}
         for nj, (xsec,n_evt) in stitch_samples.items():

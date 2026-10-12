@@ -136,7 +136,10 @@ def tau_energy_scale_setup(
     tagger_name = self.config_inst.x.deep_tau.tagger
     year = self.config_inst.x.year
     tag = self.config_inst.x.long_tag
-    self.tes_corrector = correction_set[f"tau_es_dm_{tagger_name}_{year}_{tag}"]
+    if year == 2024:
+        self.tes_corrector = correction_set[f"tau_es_dm_{tagger_name}_2023_postBPix"] #TODO: Update this to the correct 2024 TES when available
+    else:
+        self.tes_corrector = correction_set[f"tau_es_dm_{tagger_name}_{year}_{tag}"]
 
     
 # @calibrator(

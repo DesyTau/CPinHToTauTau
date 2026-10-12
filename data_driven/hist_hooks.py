@@ -102,9 +102,11 @@ def add_hist_hooks(analysis: od.Analysis) -> None:
                     
                     for the_ch in decay_ch:
                         if '_tau2' not in the_cat:
-                            sr_cats.append( '__'.join((the_cat,the_ch)))
+                            sr_cats.append('__'.join((the_cat, the_ch)))
                         else:
                             sr_cats.append(the_cat)
+
+                sr_cats = list(dict.fromkeys(sr_cats))
                 print(sr_cats)
                 shifts = [task.shift]
             for shift in shifts:
@@ -114,20 +116,48 @@ def add_hist_hooks(analysis: od.Analysis) -> None:
                     d = {}
                     mc = {}
                     cr_cat = ''
-                    for reg_name, full_name in sr.aux['abcd_regs'].items():   
-                        loc_dict = {'category': hist.loc(full_name),'shift': hist.loc(shift)}
-                        full_d = get_data_hist(hists)
-                        full_mc = get_mc_hist(hists)   
-                        if full_name in list(full_d.axes[0]): d[reg_name] = get_data_hist(hists)[loc_dict]
-                        if full_name in list(full_mc.axes[0]): mc[reg_name] = get_mc_hist(hists)[loc_dict]
-                        if reg_name == 'dr_num': cr_cat = full_name
-                            
+                    # for reg_name, full_name in sr.aux['abcd_regs'].items():   
+                    #     loc_dict = {'category': hist.loc(full_name),'shift': hist.loc(shift)}
+                    #     full_d = get_data_hist(hists)
+                    #     full_mc = get_mc_hist(hists)   
+                    #     if full_name in list(full_d.axes[0]): d[reg_name] = get_data_hist(hists)[loc_dict]
+                    #     if full_name in list(full_mc.axes[0]): mc[reg_name] = get_mc_hist(hists)[loc_dict]
+                    #     if reg_name == 'dr_num': cr_cat = full_name
+                    if "abcd_regs" not in sr.aux:
+                        print(f"skipping qcd for {the_cat}: no abcd_regs")
+                        continue
+                    
+                    full_d = get_data_hist(hists)
+                    full_mc = get_mc_hist(hists)
+
+                    if full_d is None:
+                        print("*** WARNING: no data hist found, skipping qcd ***")
+                        continue
+
+                    if full_mc is None:
+                        print("*** WARNING: no mc hist found, skipping qcd ***")
+                        continue
+
+                    for reg_name, full_name in sr.aux["abcd_regs"].items():
+                        loc_dict = {"category": hist.loc(full_name), "shift": hist.loc(shift)}
+
+                        if full_name in list(full_d.axes[0]):
+                            d[reg_name] = full_d[loc_dict]
+
+                        if full_name in list(full_mc.axes[0]):
+                            mc[reg_name] = full_mc[loc_dict]
+
+                        if reg_name == "dr_num":
+                            cr_cat = full_name
+                                                
                     from cmsdb.processes.qcd import qcd
-                    h_donor_name  = list(hists.keys())[0]
+
                     if qcd not in hists.keys():
-                        hists[qcd] = hists[h_donor_name].copy().reset()
-                        tmp_arr = hists[qcd].view()
-                    if 'ar' in d.keys() and not d['ar'].empty():
+                        hists[qcd] = full_d.copy().reset()
+
+                    tmp_arr = hists[qcd].view()
+                    #if 'ar' in d.keys() and not d['ar'].empty():
+                    if "ar" in d and not d["ar"].empty():
                         if flat_tf:
                             tf = 1
                             #num = ak.sum(d['dr_num'].values() - mc['dr_num'].values())
@@ -148,15 +178,21 @@ def add_hist_hooks(analysis: od.Analysis) -> None:
                     
                             # tf_err2 = ((np.sum(d['dr_num'].variances()) + np.sum(mc['dr_num'].variances()))/den**2 + 
                             #     tf**2/den**2 *(np.sum(d['dr_den'].variances()) + np.sum(mc['dr_den'].variances())))
-                        val = np.maximum(d['ar'].values() - mc['ar'].values(), 0.) * tf
-                        var = (d['ar'].view().variance + mc['ar'].view().variance) * tf**2
+                        ar_mc_val = mc["ar"].values() if "ar" in mc else np.zeros_like(d["ar"].values())
+                        ar_mc_var = mc["ar"].variances() if "ar" in mc else np.zeros_like(d["ar"].variances())
+
+                        val = np.maximum(d["ar"].values() - ar_mc_val, 0.0) * tf
+                        var = (d["ar"].variances() + ar_mc_var) * tf**2
+                        # val = np.maximum(d['ar'].values() - mc['ar'].values(), 0.) * tf
+                        # var = (d['ar'].view().variance + mc['ar'].view().variance) * tf**2
                     
                         tmp_arr[find_idxs(hists[qcd], the_cat, shift)].value = val
                         tmp_arr[find_idxs(hists[qcd], the_cat, shift)].variance = var
                         if len(cr_cat):
                             if ('dr_den' in d.keys()) and ('dr_den' in mc.keys()):  
                                 cr_val = np.maximum(d['dr_den'].values() - mc['dr_den'].values(), 0)
-                                cr_var = d['dr_den'].variances() - mc['dr_den'].variances()
+                                #cr_var = d['dr_den'].variances() - mc['dr_den'].variances()
+                                cr_var = d['dr_den'].variances() + mc['dr_den'].variances()
                             elif ('dr_den' in d.keys()):
                                 cr_val = d['dr_den'].values() 
                                 cr_var = d['dr_den'].variances()

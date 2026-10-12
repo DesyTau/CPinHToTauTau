@@ -24,17 +24,17 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
             f"Tau.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge", 
                 "rawDeepTau2018v2p5VSjet","idDeepTau2018v2p5VSjet", "idDeepTau2018v2p5VSe", "idDeepTau2018v2p5VSmu",
-                "rawIdx", "IPx", "IPy", "IPz", "ip_sig", "jetIdx","IP_cov*", "refitSV*",
+                "rawIdx", "IPx", "IPy", "IPz", "ip_sig", "jetIdx", "refitSV*",
                 ]
     } | {
             f"Muon.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge",
-                "rawIdx","IPx", "IPy", "IPz","ip_sig", "jetIdx","IP_cov*"
+                "rawIdx","IPx", "IPy", "IPz","ip_sig", "jetIdx",
             ] 
     } | {
             f"Electron.{var}" for var in [
                 "pt","eta","phi","mass","dxy","dz", "charge", 
-                "pfRelIso03_all", "rawIdx", "IPx", "IPy", "IPz","ip_sig", "jetIdx","IP_cov*"
+                "pfRelIso03_all", "rawIdx", "IPx", "IPy", "IPz","ip_sig", "jetIdx",
             ] 
     } | { 
         optional("Tau.genPartFlav"),
