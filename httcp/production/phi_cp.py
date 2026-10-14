@@ -32,17 +32,19 @@ def get_single_part(array: ak.Array, idx: int) -> ak.Array:
 
 def prepare_acop_vecs(events: ak.Array, pair_decay_ch):
     PVBS        = events.PVBS
-    if pair_decay_ch.endswith("_gen"):
-        #from IPython import embed; embed()
-        tau = events.gen_lep.lep1
-        tauprod = events.gentau_decay_prods_mutau_lep1 
-        muon = events.gen_lep.lep0
-    else:
-        tau = events.hcand_mutau.lep1
-        tauprod = events.tau_decay_prods_mutau_lep1
-        muon = events.hcand_mutau.lep0
-        if (pair_decay_ch == "mu_a1_3pr_pv_mtt") or (pair_decay_ch == "mu_a1_3pr_pv_gef"):
-            tauMTT = events.hcand_mutau.fastMTT_BW.lep1
+    # TODO: Uncomment later. NO GEN LEP BRANCHES IN NANOAOD v15
+
+    # if pair_decay_ch.endswith("_gen"):
+    #     #from IPython import embed; embed()
+    #     tau = events.gen_lep.lep1
+    #     tauprod = events.gentau_decay_prods_mutau_lep1 
+    #     muon = events.gen_lep.lep0
+    # else:
+    tau = events.hcand_mutau.lep1
+    tauprod = events.tau_decay_prods_mutau_lep1
+    muon = events.hcand_mutau.lep0
+    if (pair_decay_ch == "mu_a1_3pr_pv_mtt") or (pair_decay_ch == "mu_a1_3pr_pv_gef"):
+        tauMTT = events.hcand_mutau.fastMTT_BW.lep1
         
     
     ch1 = muon.charge # Take the same charge for reco and gen
@@ -289,7 +291,8 @@ def produce_alpha(vecs_p4) -> ak.Array:
 @producer(
     uses={
         "hcand_*","tau_decay_prods_*","PVBS.*",
-        optional("gen_lep.*"), optional("gentau_decay_prods_mutau_lep1.*")},
+        #optional("gen_lep.*"), optional("gentau_decay_prods_mutau_lep1.*")},
+    },
     produces={
         f"phi_cp_*"
     } | {
@@ -309,8 +312,8 @@ def phi_cp(
                 'mu_a1_1pr',
                 'mu_a1_3pr_dp',
                 'mu_a1_3pr_pv']
-    if self.dataset_inst.is_mc:
-        channels = channels + [the_ch+'_gen' for the_ch in channels]
+    # if self.dataset_inst.is_mc:
+    #     channels = channels + [the_ch+'_gen' for the_ch in channels]
     channels += ['mu_a1_3pr_pv_mtt','mu_a1_3pr_pv_gef']
     for the_ch in channels:
         print(f"Calculating phi_cp for {the_ch}")

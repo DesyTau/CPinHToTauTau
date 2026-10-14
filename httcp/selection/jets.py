@@ -9,7 +9,8 @@ import law
 from columnflow.selection import Selector, SelectionResult, selector
 from columnflow.util import maybe_import
 from law.util import InsertableDict
-from columnflow.columnar_util import set_ak_column, optional_column as optional
+from httcp.production.aux_columns import create_jetID_masks
+from columnflow.columnar_util import set_ak_column, flat_np_view
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
 
@@ -19,9 +20,8 @@ logger = law.logger.get_logger(__name__)
 
 @selector(
     uses={
-        "Jet.{pt,eta,phi,mass,jetId,chEmEF,neEmEF}", 
-        "Muon.{pt,eta,phi,mass,isPFcand}",
-        optional("Jet.puId"),
+        create_jetID_masks,
+        "Jet.{pt,eta,phi,mass,chEmEF,neEmEF,pass_tightID_lep_veto}"
     },
     produces={"Jet.veto_map_mask"},
     get_veto_map_file=(lambda self, external_files: external_files.jet_veto_map),
@@ -52,20 +52,23 @@ def jet_veto_map(
     documentation: https://cms-jerc.web.cern.ch/Recommendations/#jet-veto-maps
     """
     jet = events.Jet
-    muon = events.Muon[events.Muon.isPFcand]
+    
     # loose jet selection
     jet_mask = (
         (jet.pt > 15) &
-        (jet.jetId >= 2) &  # tight id 
-        ((jet.chEmEF + jet.neEmEF) < 0.9) &
-        ak.all(jet.metric_table(muon) >= 0.2, axis=2) &
-        (np.abs(jet.eta) < 5.191)    # https://cms-nanoaod-integration.web.cern.ch/commonJSONSFs/summaries/JME_2022_Prompt_jetvetomaps.html
+        jet.pass_tightID_lep_veto &
+        ((jet.chEmEF + jet.neEmEF) < 0.9) # https://cms-nanoaod-integration.web.cern.ch/commonJSONSFs/summaries/JME_2022_Prompt_jetvetomaps.html
     )
     #Create 
-    presel_jet = ak.mask(jet,jet_mask)
-    
+    presel_jet = jet[jet_mask]
+
     veto_args = ["jetvetomap", presel_jet.eta, presel_jet.phi]
-    veto_mask = ak.fill_none(self.veto_map.evaluate(*veto_args),False)
+    veto_mask_sel = ak.fill_none(self.veto_map.evaluate(*veto_args) != 0, False)
+    veto_mask = ak.zeros_like(jet.pt, dtype=np.bool_)
+    flat_veto_mask = flat_np_view(veto_mask)
+    flat_jet_mask = flat_np_view(jet_mask)
+    flat_veto_mask[flat_jet_mask] = np.asarray(ak.flatten(veto_mask_sel))
+
     jet_veto_per_evt = ~ak.any(veto_mask, axis=1)
     events = set_ak_column(events, "Jet.veto_map_mask", veto_mask)
     # create the selection result
@@ -76,20 +79,22 @@ def jet_veto_map(
 
 
 @jet_veto_map.requires
-def jet_veto_map_requires(self: Selector, reqs: dict) -> None:
+def jet_veto_map_requires(self: Selector, task: law.Task, reqs: dict, **kwargs) -> None:
     if "external_files" in reqs:
         return
 
     from columnflow.tasks.external import BundleExternalFiles
-    reqs["external_files"] = BundleExternalFiles.req(self.task)
+    reqs["external_files"] = BundleExternalFiles.req(task)
 
 
 @jet_veto_map.setup
 def jet_veto_map_setup(
     self: Selector,
+    task: law.Task,
     reqs: dict,
     inputs: dict,
     reader_targets: InsertableDict,
+    **kwargs,
 ) -> None:
     bundle = reqs["external_files"]
 

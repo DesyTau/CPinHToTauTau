@@ -32,7 +32,7 @@ from httcp.selection.higgscand import new_higgscand, mask_nans
 from httcp.selection.cutflow import cutflow_main
 
 from httcp.production.aux_columns import channel_id, create_jetID_masks, jet_veto, add_tau_prods
-from columnflow.selection.cms.jets import jet_veto_map
+from httcp.selection.jets import jet_veto_map
 from httcp.selection.met_filters_aux import met_filters_aux
 np = maybe_import("numpy")
 ak = maybe_import("awkward")
@@ -124,8 +124,9 @@ def main(
     events, met_filter_results = self[met_filters](events, **kwargs)
     results += met_filter_results
     # auxillary met filter selection
-    events, met_filter_aux_results = self[met_filters_aux](events, **kwargs)
-    results += met_filter_aux_results
+    if self.config_inst.x.year in (2022, 2023):
+        events, met_filter_aux_results = self[met_filters_aux](events, **kwargs)
+        results += met_filter_aux_results
 
     # muon selection
     # e.g. mu_idx: [ [0,1], [], [1], [0], [] ]

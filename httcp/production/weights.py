@@ -283,6 +283,7 @@ def tau_weight(self: Producer, events: ak.Array, do_syst: bool, **kwargs) -> ak.
     if  do_syst: shifts=[*shifts,"up", "down"]         
     sf_values = {}
 
+    year = self.config_inst.x.year
     channels = self.config_inst.channels.names()
     ch_objects = self.config_inst.x.ch_objects
     for shift in shifts:
@@ -314,11 +315,23 @@ def tau_weight(self: Producer, events: ak.Array, do_syst: bool, **kwargs) -> ak.
                                                      dm[mask],
                                                      genmatch[mask],
                                                      wp_vs_e,
-                                                     syst)   
-                    args_vs_mu = lambda mask, syst : (eta[mask],
+                                                     syst)  
+                    if year == 2024:
+                        wp_vs_jet_for_vsmu_sf = wp_vs_jet
+                        if wp_vs_jet_for_vsmu_sf == "VTight":
+                            wp_vs_jet_for_vsmu_sf = "Tight"
+
+                        args_vs_mu = lambda mask, syst : (eta[mask],
                                                       genmatch[mask],
                                                       wp_vs_mu,
-                                                      syst)                      
+                                                      wp_vs_e,
+                                                      wp_vs_jet_for_vsmu_sf,
+                                                      syst) 
+                    else:                                 
+                        args_vs_mu = lambda mask, syst : (eta[mask],
+                                                        genmatch[mask],
+                                                        wp_vs_mu,
+                                                        syst)                      
                     args_vs_jet = lambda mask, syst : (pt[mask],
                                                        dm_pnet[mask],
                                                        genmatch[mask],
@@ -383,7 +396,10 @@ def tau_weight_setup(
     tag = self.config_inst.x.long_tag
     self.id_vs_e_corrector      = cs1[f"{tagger_name}VSe"]
     self.id_vs_mu_corrector     = cs1[f"{tagger_name}VSmu"]
-    self.id_vs_jet_corrector     = cs2[f"tau_sf_pt-dm_{tagger_name}VSjet_{year}_{tag}"]
+    if year == 2024:
+        self.id_vs_jet_corrector     = cs2[f"tau_sf_pt-dm_DeepTau2018v2p5VSjet_2023_postBPix"].  #TODO: Update this to the correct 2024 SF when available
+    else: 
+        self.id_vs_jet_corrector     = cs2[f"tau_sf_pt-dm_{tagger_name}VSjet_{year}_{tag}"]
 
 @producer(
     uses={
@@ -553,8 +569,8 @@ def trigger_weight_mutau_setup(
     muon_file = correctionlib.CorrectionSet.from_file(bundle.files.muon_correction.abspath)
     self.strig_mu = muon_file[self.config_inst.x.muon_sf.trig.corrector]
     
-    mutau_file = correctionlib.CorrectionSet.from_file(bundle.files.cross_mutau_mu_leg.abspath)
-    self.xtrig_mu = mutau_file[self.config_inst.x.muon_sf.xtrig.corrector]
+    #mutau_file = correctionlib.CorrectionSet.from_file(bundle.files.cross_mutau_mu_leg.abspath)
+    #self.xtrig_mu = mutau_file[self.config_inst.x.muon_sf.xtrig.corrector]
     
     tau_file  = correctionlib.CorrectionSet.from_file(bundle.files.tau_correction.abspath)
     self.xtrig_tau = tau_file['tau_trigger']

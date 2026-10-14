@@ -60,11 +60,11 @@ def create_jetID_masks(
         **kwargs
 ) -> ak.Array:
     """
-    For nanoaod v13 and v14 jetID is bugged, so there is a special procedure to apply Tight jet ID 
+    For nanoaod v13 and v14 jetID is bugged, so there is a special procedure to apply Tight jet ID. v15 does not contain the jetID branch.
     """
     nano_version = self.config_inst.campaign.x.version
     jets = events.Jet
-    if nano_version in [13, 14]:
+    if nano_version in [13, 14, 15]:
         print(f'Applying custom tightJetID for nanoAOD v{nano_version}...')
         tightID_eta_2p6 = ((jets.neHEF < 0.99)
                            & (jets.neEmEF < 0.9)
@@ -118,9 +118,11 @@ def jet_veto(
     This function that produces 'is_b_vetoed' column to be used in categorisation
     """
     year = self.config_inst.x.year
-    tag = self.config_inst.x.tag
-    btag_wp = self.config_inst.x.btag_working_points[year][tag].deepjet.medium
-
+    tag = self.config_inst.x.long_tag
+    if year == 2024: 
+        btag_wp = self.config_inst.x.btag_working_points[year][tag].UParTAK4.medium
+    else:
+        btag_wp = self.config_inst.x.btag_working_points[year][tag].deepjet.medium
     # nominal jet selection
     jet_pt_sorted_idx = ak.argsort(events.Jet.pt, axis=1, ascending=False)
     sorted_jets = events.Jet[jet_pt_sorted_idx]
@@ -359,8 +361,11 @@ def number_b_jet(
     This function that produces 'N_b_jets' column to be used in categorisation
     """
     year = self.config_inst.x.year
-    tag = self.config_inst.x.tag
-    btag_wp = self.config_inst.x.btag_working_points[year][tag].deepjet.medium
+    tag = self.config_inst.x.long_tag
+    if year == 2024: 
+        btag_wp = self.config_inst.x.btag_working_points[year][tag].UParTAK4.medium
+    else:
+        btag_wp = self.config_inst.x.btag_working_points[year][tag].deepjet.medium
     # nominal jet selection
     jet_pt_sorted_idx = ak.argsort(events.Jet.pt, axis=1, ascending=False)
     sorted_jets = events.Jet[jet_pt_sorted_idx]

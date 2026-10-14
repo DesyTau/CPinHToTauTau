@@ -52,7 +52,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         gen_boson,
         #met_recoil,
         get_mc_weight,
-        #fake_factors,
+        fake_factors,
         hcand_fields,
         tauspinner_weight,
         category_ids,
@@ -64,7 +64,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         "Jet.*",
         pion_energy_split,
         gen_lep_fields,
-        ip_correction,
+        #ip_correction,
         ip_sig_correction,
         fastMTT,
         ip_sig_correction,
@@ -97,7 +97,7 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
         number_b_jet,
         pion_energy_split,
         gen_lep_fields,
-        ip_correction,
+        #ip_correction,
         fastMTT,
         ip_sig_correction,
         hcp_bdt_score,
@@ -111,10 +111,10 @@ set_ak_column_i32 = functools.partial(set_ak_column, value_type=np.int32)
 def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
     # ensure coffea behaviors are loaded
     events = self[attach_coffea_behavior](events, **kwargs)
-    if self.dataset_inst.is_mc:
-        events = self[gen_lep_fields](events, **kwargs)
-    print("Performing IP correction...")
-    events = self[ip_correction](events, **kwargs) #Uses the output of the gen_lep_fields producer
+    # if self.dataset_inst.is_mc:
+    #     events = self[gen_lep_fields](events, **kwargs)
+    # print("Performing IP correction...")
+    # events = self[ip_correction](events, **kwargs) #Commenting this out for the moment. Uses the output of the gen_lep_fields producer
     
     print("Performing IP significance correction...")
     events = self[ip_sig_correction](events, **kwargs) 
@@ -159,8 +159,8 @@ def main(self: Producer, events: ak.Array, **kwargs) -> ak.Array:
         print("Producing PU weights...")          
         events = self[pu_weight](events, **kwargs)
         
-        print("Producing MuTau Trigger SFs weights...")          
-        events = self[trigger_weight_mutau](events, **kwargs)      
+        # print("Producing MuTau Trigger SFs weights...")          
+        # events = self[trigger_weight_mutau](events, **kwargs)      
         
         print("Producing Muon weights...")
         events = self[muon_weight](events,do_syst = True, **kwargs)

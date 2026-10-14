@@ -47,21 +47,33 @@ def get_evaluators(
         :external+correctionlib:py:class:`correctionlib.highlevel.CorrectionSet`
     """
     available_keys = set(correction_set.keys()).union(correction_set.compound.keys())
-    corrected_names = []
-    for name in names:
-        if name not in available_keys:
-            # Find the closest match using difflib
-            closest_matches = difflib.get_close_matches(name, available_keys, n=1)
-            if closest_matches:
-                closest_match = closest_matches[0]
-                print(
-                    f"Correction '{name}' not found. Using closest match: '{closest_match}'",
-                )
-                corrected_names.append(closest_match)
-            else:
-                raise RuntimeError(f"Correction '{name}' not found and no close match available.")
-        else:
-            corrected_names.append(name)
+    # corrected_names = []
+    # for name in names:
+    #     if name not in available_keys:
+    #         # Find the closest match using difflib
+    #         closest_matches = difflib.get_close_matches(name, available_keys, n=1)
+    #         if closest_matches:
+    #             closest_match = closest_matches[0]
+    #             print(
+    #                 f"Correction '{name}' not found. Using closest match: '{closest_match}'",
+    #             )
+    #             corrected_names.append(closest_match)
+    #         else:
+    #             raise RuntimeError(f"Correction '{name}' not found and no close match available.")
+    #     else:
+    #         corrected_names.append(name)
+    missing = [name for name in names if name not in available_keys]
+    if missing:
+        raise RuntimeError(
+            f"Requested corrections not found: {missing}"
+        )
+
+    return [
+        correction_set.compound[name]
+        if name in correction_set.compound
+        else correction_set[name]
+        for name in names
+    ]
     
     # Retrieve the evaluators
     return [
@@ -159,8 +171,9 @@ def get_jec_config_default(self) -> DotDict:
 
 @calibrator(
     uses={
+        "run",
         "Jet.pt", "Jet.eta", "Jet.phi", "Jet.mass", "Jet.area", "Jet.rawFactor",
-        "Jet.jetId",
+        #"Jet.jetId",
         optional("fixedGridRhoFastjetAll"),
         optional("Rho.fixedGridRhoFastjetAll"),
         attach_coffea_behavior,
@@ -244,7 +257,7 @@ def jec(
     events = set_ak_column_f32(events, "Jet.pt_raw", events.Jet.pt * (1 - events.Jet.rawFactor))
     events = set_ak_column_f32(events, "Jet.mass_raw", events.Jet.mass * (1 - events.Jet.rawFactor))
     
-    def correct_jets(pt, phi, area, eta, rho, evaluator_key="jec"):
+    def correct_jets(pt, phi, area, eta, rho, run, evaluator_key="jec"):
         # variable naming convention
         variable_map = {
             "JetA": area,
@@ -252,6 +265,7 @@ def jec(
             "JetPt": pt,
             "JetPhi": phi,
             "Rho": ak.values_astype(rho, np.float32),
+            "run": ak.values_astype(run, np.float32),
         }
 
         # apply all correctors sequentially, updating the pt each time
@@ -289,6 +303,7 @@ def jec(
             eta=events.Jet.eta,
             area=events.Jet.area,
             rho=rho,
+            run=events.run,
             evaluator_key="jec_subset_type1_met",
         )
         
@@ -311,6 +326,7 @@ def jec(
         eta=events.Jet.eta,
         area=events.Jet.area,
         rho=rho,
+        run=events.run,
         evaluator_key="jec",
     )
     # map jet phi into [-pi, pi] 
@@ -512,18 +528,28 @@ def jec_setup(
 
     # compute JEC keys from config information
     jec_cfg = self.get_jec_config()
+    year = int(self.config_inst.x.year)
 
     def make_jme_keys(names, jec=jec_cfg, is_data=self.dataset_inst.is_data):
         if is_data:
+
+            if year == 2024:
+                return [
+                    f"{jec.campaign}_{jec.version}_DATA_{name}_{jec.jet_type}"
+                    for name in names
+                ]
 
             jec_era = self.dataset_inst.get_aux("jec_era", None)
             # if no special JEC era is specified, infer based on 'era'
             if jec_era is None:
                 jec_era = "Run" + self.dataset_inst.get_aux("era")
+            
+            return [
+                f"{jec.campaign}_{jec_era}_{jec.version}_DATA_{name}_{jec.jet_type}"
+                for name in names
+            ]
 
         return [
-            f"{jec.campaign}_{jec_era}_{jec.version}_DATA_{name}_{jec.jet_type}"
-            if is_data else
             f"{jec.campaign}_{jec.version}_MC_{name}_{jec.jet_type}"
             for name in names
         ]

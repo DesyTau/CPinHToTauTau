@@ -132,6 +132,16 @@ def add_run3(ana: od.Analysis,
             "jerc_postfix"          : "BPix",
             "cat_tag"               : "Run3-23DSep23-Summer23BPix-NanoAODv12",
             },
+        "2024"      : {
+            "short_tag"             : "",
+            "long_tag"              : "",
+            "pog_tag"               : "Summer24",
+            "e_sf_tag"              : "",
+            "e_scale_corrector"     : "Scale",
+            "e_smearing_corrector"  : "SmearAndSyst",
+            "jerc_postfix"          : "",
+            "cat_tag"               : "",
+            },
         ""  : { #Default values in case tag is empty
             "short_tag"             : "",
             "long_tag"              : "",
@@ -158,8 +168,10 @@ def add_run3(ana: od.Analysis,
         #"dy_z2ee",
         #"dy_z2mumu",
         #"dy_z2tautau",
-        "dy_ll_m10to50",
-        "dy_ll_m50",
+        #"dy_ll_m10to50",
+        #"dy_ll_m50",
+        "dy_ee_m50",
+        "dy_mumu_m50",
         "dy_tt_m50",
         # "dy_lep_m10to50",
         #W + jets
@@ -183,6 +195,12 @@ def add_run3(ana: od.Analysis,
         "tt_fh",
         #single top
         "st",
+        "st_tchannel_t",
+        "st_tchannel_t_had",
+        "st_tchannel_t_lep",
+        "st_tchannel_tbar",
+        "st_tchannel_tbar_had",
+        "st_tchannel_tbar_lep",
         "st_twchannel_t_dl",
         "st_twchannel_t_fh",
         "st_twchannel_t_sl",
@@ -223,10 +241,17 @@ def add_run3(ana: od.Analysis,
         if process_name.startswith("h_"):
             proc.add_tag("signal")  
     # add datasets we need to study
-    from httcp.config.datasets import add_datasets_2025_skim_v2,add_datasets_2024_skim_v1
-    datasets = add_datasets_2025_skim_v2()
+    from httcp.config.datasets import add_datasets_2024_nanov15_v1,add_datasets_2025_skim_v2,add_datasets_2024_skim_v1
+    
+    if year == 2024:
+        datasets = add_datasets_2024_nanov15_v1()
+        ds_key = "2024"
+    else:
+        datasets = add_datasets_2025_skim_v2()
+        ds_key = f"{year}{tag}" 
+
     #Simultaneously select the dataset list depending on the year,campaign tag, and iterate over the constituents
-    for dataset_name in datasets[f"{year}{tag}"]:
+    for dataset_name in datasets[ds_key]:
         # add the dataset
         dataset = cfg.add_dataset(campaign.get_dataset(dataset_name))
         if dataset_name.startswith("h_") or dataset_name.startswith("zh_") or dataset_name.startswith("wh_"):
@@ -240,17 +265,26 @@ def add_run3(ana: od.Analysis,
     # verify that the root process of all datasets is part of any of the registered processes
     verify_config_processes(cfg, warn=True)
     
-    cfg.x.stitch_samples = cfg.x.datasets2apply_tau_veto = [
-        'DYto2L_M_50_amcatnloFXFX',
-        'DYto2L_M_50_0J_amcatnloFXFX',
-        'DYto2L_M_50_1J_amcatnloFXFX',
-        'DYto2L_M_50_2J_amcatnloFXFX',
-        "WtoLNu_1J_madgraphMLM",
-        "WtoLNu_2J_madgraphMLM",
-        "WtoLNu_3J_madgraphMLM",
-        "WtoLNu_4J_madgraphMLM",
-        "WtoLNu_madgraphMLM",
-    ]
+    if year == 2024:
+        cfg.x.stitch_samples = []
+        cfg.x.datasets2apply_tau_veto = [
+            "WtoLNu_1J_madgraphMLM",
+            "WtoLNu_2J_madgraphMLM",
+            "WtoLNu_3J_madgraphMLM",
+            "WtoLNu_4J_madgraphMLM",
+        ] 
+    else :
+        cfg.x.stitch_samples = cfg.x.datasets2apply_tau_veto = [
+            'DYto2L_M_50_amcatnloFXFX',
+            'DYto2L_M_50_0J_amcatnloFXFX',
+            'DYto2L_M_50_1J_amcatnloFXFX',
+            'DYto2L_M_50_2J_amcatnloFXFX',
+            "WtoLNu_1J_madgraphMLM",
+            "WtoLNu_2J_madgraphMLM",
+            "WtoLNu_3J_madgraphMLM",
+            "WtoLNu_4J_madgraphMLM",
+            "WtoLNu_madgraphMLM",
+        ]
 
     #Adding the triggers 
     from httcp.config.triggers import add_triggers_run3
@@ -314,10 +348,12 @@ def add_run3(ana: od.Analysis,
         jerc_campaign = f"Summer{year2}{tags['jerc_postfix']}_22Sep2023"
     elif year==2023:
         jerc_campaign = f"Summer{year2}{tags['jerc_postfix']}Prompt23"
+    elif year==2024:
+        jerc_campaign = f"Summer24{tags['jerc_postfix']}Prompt24"
         
     cfg.x.jec = DotDict.wrap({
         "campaign": jerc_campaign,
-        "version": {2016: "V7", 2017: "V5", 2018: "V5", 2022: "V2", 2023:"V1"}[year],
+        "version": {2016: "V7", 2017: "V5", 2018: "V5", 2022: "V2", 2023:"V1", 2024:"V2"}[year],
         "jet_type": jet_type,
         "levels": ["L1L2L3Res"], #"L2Relative", "L2L3Residual", "L3Absolute", "L1L2L3Res" 
         "levels_DATA": ["L1L2L3Res"], #"L2Relative", "L2L3Residual", "L3Absolute", "L1L2L3Res" 
@@ -471,11 +507,11 @@ def add_run3(ana: od.Analysis,
     
     
     lumi_dict = {
-        "2022preEE"     : Number(7_980.4,  {"lumi_13p6TeV_correlated": 0.014j,}),
-        "2022postEE"    : Number(26_671.7, {"lumi_13p6TeV_correlated": 0.014j,}),
-        "2023preBPix"   : Number(18_063,   {"lumi_13p6TeV_correlated": 0.0j,}), 
-        "2023postBPix"  : Number(9_693,    {"lumi_13p6TeV_correlated": 0.0j,}),
-        "2024"          : Number(109_080,  {"lumi_13p6TeV_correlated": 0.0j,}),
+        "2022preEE"      : Number(7_980.4,  {"lumi_13p6TeV_correlated": 0.014j,}),
+        "2022postEE"     : Number(26_671.7, {"lumi_13p6TeV_correlated": 0.014j,}),
+        "2023preBPix"    : Number(18_063,   {"lumi_13p6TeV_correlated": 0.0j,}), 
+        "2023postBPix"   : Number(9_693,    {"lumi_13p6TeV_correlated": 0.0j,}),
+        "2024"           : Number(109_080,  {"lumi_13p6TeV_correlated": 0.0j,}),
     }
     cfg.x.luminosity = lumi_dict[f"{year}{tag}"]
     
@@ -549,10 +585,16 @@ def add_run3(ana: od.Analysis,
                     },
                 },
 
-            }
-
-                    
-                
+            },
+            2024 : {
+                "":{
+                    "UParTAK4" : { #https://btv-wiki.docs.cern.ch/ScaleFactors/Run3Summer24/
+                        "loose": 0.0246,
+                        "medium": 0.1272,
+                        "tight": 0.4648,
+                   },  
+                },
+            }             
         },
     )
             
@@ -590,7 +632,8 @@ def add_run3(ana: od.Analysis,
     ml_dir = "/eos/user/s/stzakhar/TauTheDifference/Training/models/"
     golden_ls = { 
         2022 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions22/Cert_Collisions2022_355100_362760_Golden.json", 
-        2023 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions23/Cert_Collisions2023_366442_370790_Golden.json"
+        2023 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions23/Cert_Collisions2023_366442_370790_Golden.json",
+        2024 : "https://cms-service-dqmdc.web.cern.ch/CAF/certification/Collisions24/Cert_Collisions2024_378981_386951_Golden.json",
     }  
     
     pog_tag = tags['pog_tag']
@@ -656,10 +699,41 @@ def add_run3(ana: od.Analysis,
         "filter_eff"                    : f"{corr_dir}filter_eff/2025_v1/Run3_{year}{short_tag}.yaml",
         "stitching"                     : f"{corr_dir}stitching_weights.json",
     })
+
+    corrections_dir = "/data/dust/user/sreelatl/Analyses/htt_corrections/"
+    old_corrections_dir = "/data/dust/user/sreelatl/Analyses/htt_corrections/22_23_corrections/"
+    ml_dir_new = "/data/dust/user/sreelatl/Analyses/htt_ML_model/Training/models/mt/"
+
+    jsons_2024_nanov15 = DotDict.wrap({
+        "lumi": {
+            "golden": (golden_ls[year], "v1"),
+            "normtag": ("/cvmfs/cms-bril.cern.ch/cms-lumi-pog/Normtags/normtag_PHYSICS.json", "v1"), #/cvmfs/cms-bril.cern.ch/cms-lumi-pog/Normtags
+        },
+        "pu_sf"                         : (f"{corrections_dir}POG/LUM/{year}_{pog_tag}/puWeights.json.gz", "v2"),
+        "muon_correction"               : f"{corrections_dir}POG/MUO/{year}_{pog_tag}/muon_Z.json.gz",
+        "electron_scaling_smearing"     : f"{corrections_dir}POG/EGM/{year}_{pog_tag}/electronSS.json.gz",
+        "electron_idiso"                : f"{corrections_dir}POG/EGM/{year}_{pog_tag}/electron.json.gz",
+        "electron_trigger"              : f"{corrections_dir}POG/EGM/{year}_{pog_tag}/electronHlt.json.gz",
+        "tau_correction"                : f"{corrections_dir}POG/TAU/{year}_{pog_tag}/tau.json.gz",
+        "tes"                           : (f"{old_corrections_dir}fromAliya/measured_by_ic/tes/tau_es_dm_DeepTau2018v2p5_2023_postBPix.json.gz", "v1"),
+        "tau_sf"                        : f"{old_corrections_dir}fromAliya/measured_by_ic/tau_sf/tau_sf_pt-dm_DeepTau2018v2p5VSjet_2023_postBPix.json.gz",
+        "tau_trigger_sf"                : f"{old_corrections_dir}fromAliya/measured_by_ic/tau_trigger_sf/tau_trigger_DeepTau2018v2p5_2023_postBPix.json.gz",
+        "zpt_weight"                    : f"{corrections_dir}DY_Zpt_recoil/DY_pTll_weights_2024_v5.json.gz",
+        "met_recoil"                    : f"{corrections_dir}DY_Zpt_recoil/DY_pTll_recoil_corrections_2024_v5.json.gz",
+        "jet_jerc"                      : (f"{corrections_dir}POG/JME/{year}_{pog_tag}/jet_jerc.json.gz", "v2"),
+        "jet_veto_map"                  : (f"{corrections_dir}POG/JME/{year}_{pog_tag}/jetvetomaps.json.gz", "v2"),
+        "fake_factors"                  : (f"{old_corrections_dir}fake_factors_v1_2025_no_recoil_sigmoid_9bins.json", "v2"),
+        "ip_sig_corr"                   : (f"{old_corrections_dir}measured_by_Alexei/IPsignificance/JSON/IP_Significance_Correction_Run3_2022-2023_muon.json", "v2"),
+        "ip_corr"                       : f"{old_corrections_dir}fromAliya/ip_correction/ip_correction_Run3_2023BPix.json",
+        "ml_model_even"                 : f"{ml_dir_new}EVEN/model_mt_EVEN.json",
+        "ml_model_odd"                  : f"{ml_dir_new}ODD/model_mt_ODD.json",
+        "filter_eff"                    : f"{corrections_dir}Filter_eff/2024/filter_efficiencies.yaml",
+        "stitching"                     : f"{old_corrections_dir}fromAliya/stitching_weights.json",
+    })
     
     
     
-    cfg.x.external_files = jsons_2025_v2
+    cfg.x.external_files = jsons_2024_nanov15
     #--------------------------------------------------------------------------------------------- #
     # electron settings
     # names of electron correction sets and working points
@@ -771,7 +845,7 @@ def add_run3(ana: od.Analysis,
         "muon_weight_nom": get_shifts("mu"),
         #"electron_weight_nom": get_shifts("electron"), 
         "top_pt_weight" : [],       
-        "trigger_weight_mutau_nom": [],
+        #"trigger_weight_mutau_nom": [],
         "stitching_weight": [],
     })
     #for dataset in cfg.datasets:
@@ -881,6 +955,12 @@ def add_run3(ana: od.Analysis,
             "DYto2L_M_50_1J_amcatnloFXFX": "NLO",
             "DYto2L_M_50_2J_amcatnloFXFX": "NLO",
             "DYto2L_M_50_amcatnloFXFX": "NLO",
+            "DYto2E_MLL_50_0J_amcatnloFXFX": "NLO",
+            "DYto2E_MLL_50_1J_amcatnloFXFX": "NLO",
+            "DYto2E_MLL_50_2J_amcatnloFXFX": "NLO",
+            "DYto2Mu_MLL_50_0J_amcatnloFXFX": "NLO",
+            "DYto2Mu_MLL_50_1J_amcatnloFXFX": "NLO",
+            "DYto2Mu_MLL_50_2J_amcatnloFXFX": "NLO",
             # DY->tautau
             "DYto2Tau_MLL_50_0J_amcatnloFXFX": "NLO",
             "DYto2Tau_MLL_50_1J_amcatnloFXFX": "NLO",
@@ -894,7 +974,7 @@ def add_run3(ana: od.Analysis,
         },
     })
     
-    if cfg.campaign.x("custom").get("creator") == "desy":  
+    if cfg.campaign.x("custom", {}).get("creator") == "desy":  
         def get_dataset_lfns(dataset_inst: od.Dataset, shift_inst: od.Shift, dataset_key: str) -> list[str]:
             # destructure dataset_key into parts and create the lfn base directory
             print(f"Creating custom get_dataset_lfns for {config_name}")   

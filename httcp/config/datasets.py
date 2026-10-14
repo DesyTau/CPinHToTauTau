@@ -410,7 +410,61 @@ def add_datasets_2025_skim_v2():
         "wph_htt_sm_filtered","wph_htt_cpo_filtered","wph_htt_mm_filtered","wph_htt_flat_filtered",
         "wmh_htt_sm_filtered","wmh_htt_cpo_filtered","wmh_htt_mm_filtered","wmh_htt_flat_filtered",
         ]
-    
+    return datasets
+
+def add_datasets_2024_nanov15_v1():
+    datasets = {}
+    datasets['2024'] = [
+        #data
+        "data_mu_C",
+        "data_mu_D",
+        "data_mu_E",
+        "data_mu_F",
+        "data_mu_G",
+        "data_mu_H",
+        "data_mu_I",
+        # DY->ll
+        "DYto2E_MLL_50_0J_amcatnloFXFX",
+        "DYto2E_MLL_50_1J_amcatnloFXFX",
+        "DYto2E_MLL_50_2J_amcatnloFXFX",
+        "DYto2Mu_MLL_50_0J_amcatnloFXFX",
+        "DYto2Mu_MLL_50_1J_amcatnloFXFX",
+        "DYto2Mu_MLL_50_2J_amcatnloFXFX",
+        # DY->tautau
+        "DYto2Tau_MLL_50_0J_amcatnloFXFX",
+        "DYto2Tau_MLL_50_1J_amcatnloFXFX",
+        "DYto2Tau_MLL_50_2J_amcatnloFXFX",
+        # Single top
+        "TBbarQto2Q",
+        "TbarBQto2Q",
+        "TBbarQtoLNu",
+        "TbarBQtoLNu",
+        "TbarWplusto2L2Nu", 
+        "TbarWplustoLNu2Q",
+        "TWminusto2L2Nu", 
+        "TWminustoLNu2Q", 
+        # tt
+        "TTto2L2Nu",
+        "TTto4Q",
+        "TTtoLNu2Q",
+        # W+jets      
+        "WtoLNu_1J_madgraphMLM",
+        "WtoLNu_2J_madgraphMLM",
+        "WtoLNu_3J_madgraphMLM",
+        "WtoLNu_4J_madgraphMLM",
+        # Diboson
+        "WW",
+        "WZ",
+        "ZZ",
+        # ggH signal
+        "h_ggf_htt_sm_prod_sm_filtered","h_ggf_htt_sm_prod_mm_filtered","h_ggf_htt_sm_prod_cpo_filtered", 
+        #higgs signal vbf
+        "h_vbf_htt_sm_filtered",
+        #higgs signal vh
+        "zh_htt_sm_filtered",
+        "wph_htt_sm_filtered",
+        "wmh_htt_sm_filtered",
+        ]
     
     return datasets
        
