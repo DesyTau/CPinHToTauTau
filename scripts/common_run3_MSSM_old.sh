@@ -1,0 +1,403 @@
+#!/bin/bash
+
+set_common_vars() {
+
+version="all_mass_bdt_test_1"
+
+variables_emu_list=(
+  "emu_mt_tot" "emu_mt_emu" "D_zeta"
+  "emu_mt_e" "emu_mt_mu" "N_jets_pT_20_eta_4_7_Tight"
+  "leading_jet_eta" "subleading_jet_eta" "leading_jet_phi"
+  "subleading_jet_phi" "N_b_jets" 
+  "leading_jet_pt" "subleading_jet_pt" "dijet_delta_eta" "mjj" 
+  "leading_b_jet_eta" "subleading_b_jet_eta" "leading_b_jet_phi"
+  "subleading_b_jet_phi" "leading_b_jet_pt" "subleading_b_jet_pt" 
+  "di_b_jet_delta_eta" 
+  "mb_jb_j" 
+  "emu_lep0_pt" "emu_lep0_eta" "emu_lep0_phi"
+  "emu_lep0_ip_sig" "emu_lep1_pt" "emu_lep1_eta" "emu_lep1_phi" "emu_lep1_ip_sig"
+  "emu_mvis" "emu_delta_r" "emu_pt" "puppi_met_pt" "puppi_met_phi" "puppi_met_pt_recoil_corr"
+  "pt_H" "hcand_emu_fastMTT_mass" "jet_raw_PNetB"
+#   "bdt_raw_score_tt_M100" 
+#   "bdt_raw_score_dy_M100"
+#   "bdt_raw_score_ggh_M100"
+#   "bdt_raw_score_bbh_M100"
+)
+#   "bdt_raw_score_ggh_M100" "bdt_raw_score_bbh_M100" "bdt_raw_score_dy_M100" 
+#   "bdt_raw_score_tt_M100" "bdt_raw_score_wj_M100" "bdt_raw_score_st_M100"
+#   "bdt_raw_score_mb_M100"
+# mssm_ggF_signal_list=(
+#   "ggphi_phitt_60" "ggphi_phitt_65" "ggphi_phitt_70" "ggphi_phitt_75"
+#   "ggphi_phitt_80" "ggphi_phitt_85" "ggphi_phitt_90" "ggphi_phitt_95"
+#   "ggphi_phitt_100" "ggphi_phitt_105" "ggphi_phitt_110" "ggphi_phitt_115"
+#   "ggphi_phitt_120" "ggphi_phitt_125" "ggphi_phitt_130" "ggphi_phitt_135"
+#   "ggphi_phitt_140" "ggphi_phitt_160" "ggphi_phitt_180" "ggphi_phitt_200"
+#   "ggphi_phitt_250" "ggphi_phitt_300" "ggphi_phitt_350" "ggphi_phitt_400"
+#   "ggphi_phitt_450" "ggphi_phitt_500" "ggphi_phitt_600" "ggphi_phitt_700"
+#   "ggphi_phitt_800" "ggphi_phitt_900" "ggphi_phitt_1000" "ggphi_phitt_1100"
+#   "ggphi_phitt_1200" "ggphi_phitt_1400" "ggphi_phitt_1600" "ggphi_phitt_1800"
+#   "ggphi_phitt_2000" "ggphi_phitt_2300" "ggphi_phitt_2600" "ggphi_phitt_2900"
+#   "ggphi_phitt_3200" "ggphi_phitt_3500"
+# )
+# mssm_bbh_signal_list=(
+#   "bbphi_phitt_60" "bbphi_phitt_65" "bbphi_phitt_70" "bbphi_phitt_75" "bbphi_phitt_80" "bbphi_phitt_85"
+#   "bbphi_phitt_90" "bbphi_phitt_95" "bbphi_phitt_100" "bbphi_phitt_105" "bbphi_phitt_110" "bbphi_phitt_115"
+#   "bbphi_phitt_120" "bbphi_phitt_125" "bbphi_phitt_130" "bbphi_phitt_135" "bbphi_phitt_140" "bbphi_phitt_160"
+#   "bbphi_phitt_180" "bbphi_phitt_200" "bbphi_phitt_250" "bbphi_phitt_300" "bbphi_phitt_350" "bbphi_phitt_400"
+#   "bbphi_phitt_450" "bbphi_phitt_500" "bbphi_phitt_600" "bbphi_phitt_700" "bbphi_phitt_800" "bbphi_phitt_900"
+#   "bbphi_phitt_1000" "bbphi_phitt_1100" "bbphi_phitt_1200" "bbphi_phitt_1400" "bbphi_phitt_1600"
+#   "bbphi_phitt_1800" "bbphi_phitt_2000" "bbphi_phitt_2300" "bbphi_phitt_2600" "bbphi_phitt_2900"
+#   "bbphi_phitt_3200" "bbphi_phitt_3500"
+# )
+
+variables_emu=$(IFS=,; echo "${variables_emu_list[*]}")
+
+
+data_egamma_2022preEE='data_egamma_C,data_egamma_D,'
+data_muoneg_2022preEE='data_muoneg_C,data_muoneg_D,'
+data_mu_2022preEE='data_mu_C,data_mu_D,data_singlemu_C,'
+
+data_egamma_2022postEE='data_egamma_E,data_egamma_F,data_egamma_G,'
+data_muoneg_2022postEE='data_muoneg_E,data_muoneg_F,data_muoneg_G,'
+data_mu_2022postEE='data_mu_E,data_mu_F,data_mu_G,'
+
+data_egamma_2023preBPix='data_egamma_Cv123,data_egamma_Cv4,'
+data_muoneg_2023preBPix='data_muoneg_Cv123,data_muoneg_Cv4,'
+data_mu_2023preBPix='data_mu_Cv123,data_mu_Cv4,'
+
+data_egamma_2023postBPix='data_egamma_D,'
+data_muoneg_2023postBPix='data_muoneg_D,'
+data_mu_2023postBPix='data_mu_D,'
+
+bkg_dy='DYto2L_M_10to50_amcatnloFXFX,DYto2L_M_50_amcatnloFXFX,DYto2L_M_50_0J_amcatnloFXFX,DYto2L_M_50_1J_amcatnloFXFX,DYto2L_M_50_2J_amcatnloFXFX,DYto2Tau_MLL_50_0J_amcatnloFXFX,DYto2Tau_MLL_50_1J_amcatnloFXFX,DYto2Tau_MLL_50_2J_amcatnloFXFX,'
+bkg_dy_no_2Tau_1j='DYto2L_M_10to50_amcatnloFXFX,DYto2L_M_50_amcatnloFXFX,DYto2L_M_50_0J_amcatnloFXFX,DYto2L_M_50_1J_amcatnloFXFX,DYto2L_M_50_2J_amcatnloFXFX,DYto2Tau_MLL_50_0J_amcatnloFXFX,DYto2Tau_MLL_50_2J_amcatnloFXFX,'
+bkg_wj='WtoLNu_madgraphMLM,WtoLNu_1J_madgraphMLM,WtoLNu_2J_madgraphMLM,WtoLNu_3J_madgraphMLM,WtoLNu_4J_madgraphMLM,'
+bkg_vv='WW,WZ,ZZ,'
+bkg_vvv='WWW_4F,WWZ_4F,WZZ,ZZZ,'
+bkg_vh_htt='WminusHto2Tau_UncorrelatedDecay_UnFiltered,WplusHto2Tau_UncorrelatedDecay_UnFiltered,ZHto2Tau_UncorrelatedDecay_UnFiltered,'
+bkg_higgs='GluGluHto2Tau_UncorrelatedDecay_SM_UnFiltered_ProdAndDecay,VBFHto2Tau_UncorrelatedDecay_UnFiltered,'
+bkg_top='TbarWplusto4Q,TWminusto4Q,TbarWplusto2L2Nu,TbarWplustoLNu2Q,TWminusto2L2Nu,TWminustoLNu2Q,'
+bkg_ttbar='TTto2L2Nu,TTto4Q,TTtoLNu2Q,'
+signal='bbphi_phitt_100,ggphi_phitt_100'
+signal_bbh='bbphi_phitt_60,bbphi_phitt_65,bbphi_phitt_70,bbphi_phitt_75,bbphi_phitt_80,bbphi_phitt_85,bbphi_phitt_90,bbphi_phitt_95,bbphi_phitt_100,bbphi_phitt_105,bbphi_phitt_110,bbphi_phitt_115,bbphi_phitt_120,bbphi_phitt_125,bbphi_phitt_130,bbphi_phitt_135,bbphi_phitt_140,bbphi_phitt_160,bbphi_phitt_180,bbphi_phitt_200,bbphi_phitt_250,bbphi_phitt_300,bbphi_phitt_350,bbphi_phitt_400,bbphi_phitt_450,bbphi_phitt_500,bbphi_phitt_600,bbphi_phitt_700,bbphi_phitt_800,bbphi_phitt_900,bbphi_phitt_1000,bbphi_phitt_1100,bbphi_phitt_1200,bbphi_phitt_1400,bbphi_phitt_1600,bbphi_phitt_1800,bbphi_phitt_2000,bbphi_phitt_2300,bbphi_phitt_2600,bbphi_phitt_2900,bbphi_phitt_3200,bbphi_phitt_3500,'
+signal_ggf='ggphi_phitt_60,ggphi_phitt_65,ggphi_phitt_70,ggphi_phitt_75,ggphi_phitt_80,ggphi_phitt_85,ggphi_phitt_90,ggphi_phitt_95,ggphi_phitt_100,ggphi_phitt_105,ggphi_phitt_110,ggphi_phitt_115,ggphi_phitt_120,ggphi_phitt_125,ggphi_phitt_130,ggphi_phitt_135,ggphi_phitt_140,ggphi_phitt_160,ggphi_phitt_180,ggphi_phitt_200,ggphi_phitt_250,ggphi_phitt_300,ggphi_phitt_350,ggphi_phitt_400,ggphi_phitt_450,ggphi_phitt_500,ggphi_phitt_600,ggphi_phitt_700,ggphi_phitt_800,ggphi_phitt_900,ggphi_phitt_1000,ggphi_phitt_1100,ggphi_phitt_1200,ggphi_phitt_1400,ggphi_phitt_1600,ggphi_phitt_1800,ggphi_phitt_2000,ggphi_phitt_2300,ggphi_phitt_2600,ggphi_phitt_2900,ggphi_phitt_3200,ggphi_phitt_3500'
+signal_all="$signal_bbh$signal_ggf"
+case $1 in
+
+#################################
+####### Combined datasets #######
+#################################
+"22and23_emu")
+        config="run3_2022_preEE_emu,run3_2022_postEE_emu,run3_2023_preBPix_emu,run3_2023_postBPix_emu"
+        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal_all"
+        datasets="$data_egamma_2022preEE$data_mu_2022preEE${bkgs}:"
+        datasets="${datasets}$data_egamma_2022postEE$data_mu_2022postEE${bkgs}:"
+        datasets="${datasets}$data_egamma_2023preBPix$data_mu_2023preBPix${bkgs}:"
+        datasets="${datasets}$data_egamma_2023postBPix$data_mu_2023postBPix${bkgs}"
+        categories='cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_bbh_M100'
+        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal_all"
+        variables=$variables_emu
+        workflow='htcondor'
+     ;;
+"22_emu")
+        config="run3_2022_preEE_emu"
+        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal_all"
+        datasets="$data_egamma_2022preEE$data_mu_2022preEE${bkgs}"
+        categories='cat_emu_sr' #,cat_emu_sr__bdt_tt_M100,cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_bbh_M100,cat_emu_sr__bdt_dy_M100,cat_emu_sr__bdt_tt_M100'
+        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal_all,"
+        variables=$variables_emu
+        workflow='htcondor'
+     ;;
+"22EE_emu")
+        config="run3_2022_postEE_emu"
+        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal_all"
+        datasets="$data_egamma_2022postEE$data_mu_2022postEE${bkgs}"
+        categories='cat_emu_sr' #,cat_emu_sr__bdt_tt_M100,cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_bbh_M100,cat_emu_sr__bdt_dy_M100,cat_emu_sr__bdt_tt_M100'
+        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal_all,"
+        variables=$variables_emu
+        workflow='htcondor'
+     ;;
+"23_emu")
+        config="run3_2023_preBPix_emu"
+        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal_all"
+        datasets="$data_egamma_2023preBPix$data_mu_2023preBPix${bkgs}"
+        categories='cat_emu_sr' #,cat_emu_sr__bdt_tt_M100,cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_bbh_M100,cat_emu_sr__bdt_dy_M100,cat_emu_sr__bdt_tt_M100'
+        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal_all,"
+        variables=$variables_emu
+        workflow='local'
+     ;;
+"23BPix_emu")
+        config="run3_2023_postBPix_emu"
+        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal_all"
+        datasets="$data_egamma_2023postBPix$data_mu_2023postBPix${bkgs}"
+        categories='cat_emu_sr' #,cat_emu_sr__bdt_tt_M100,cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_bbh_M100,cat_emu_sr__bdt_dy_M100,cat_emu_sr__bdt_tt_M100'
+        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal,"
+        variables=$variables_emu
+        workflow='htcondor'
+     ;;
+
+"all_eras_emu")
+        config="run3_2022_preEE_emu,run3_2022_postEE_emu,run3_2023_preBPix_emu,run3_2023_postBPix_emu"
+
+        bkgs="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_vh_htt$bkg_higgs$bkg_top$bkg_ttbar$signal_all"
+
+        datasets="$data_egamma_2022preEE$data_mu_2022preEE${bkgs}:"
+        datasets="${datasets}$data_egamma_2022postEE$data_mu_2022postEE${bkgs}:"
+        datasets="${datasets}$data_egamma_2023preBPix$data_mu_2023preBPix${bkgs}:"
+        datasets="${datasets}$data_egamma_2023postBPix$data_mu_2023postBPix${bkgs}"
+
+        categories='cat_emu_sr'
+        processes="data,dy_lep,dy_tt_m50,h_ggf_htt_sm_prod_sm,st,tt,h_vbf_htt_sm,vh_htt,wj,vv,vvv,$signal_all,"
+        workflow='htcondor'
+     ;;
+
+"22_emu_BSM")
+        config="run3_2022_preEE_emu"
+        datasets=$signal_all
+        categories='cat_emu_sr'
+        variables=$variables_emu
+        processes=$signal_all
+        workflow='htcondor'
+     ;;
+"22EE_emu_BSM")
+        config="run3_2022_postEE_emu"
+        datasets=$signal_all
+        categories='cat_emu_sr'
+        variables=$variables_emu
+        processes=$signal_all
+        workflow='htcondor'
+     ;;
+"23_emu_BSM")
+        config="run3_2023_preBPix_emu"
+        datasets=$signal_all
+        categories='cat_emu_sr'
+        variables=$variables_emu
+        processes=$signal_all
+        workflow='htcondor'
+     ;;
+"23BPix_emu_BSM")
+        config="run3_2023_postBPix_emu"
+        datasets=$signal_all
+        categories='cat_emu_sr'
+        variables=$variables_emu
+        processes=$signal_all
+        workflow='htcondor'
+     ;;
+#########################
+####### 2022preEE #######
+#########################        
+    "run3_2022preEE_emu_lim")
+        config="run3_2022_preEE_emu_limited"
+        datasets='data_egamma_C,TTto2L2Nu,DYto2Tau_MLL_50_0J_amcatnloFXFX,ggphi_phitt_100,bbphi_phitt_100,WtoLNu_madgraphMLM'
+        processes='data,tt_dl,dy_tt_m50,ggphi_phitt_100,bbphi_phitt_100,wj'
+        categories='cat_emu_sr'
+        variables='bdt_D_sig_vs_Disc_ggphi_M100,bdt_D_sig_vs_Disc_bbphi_M100'
+        workflow='local'
+    ;;
+    "run3_2022preEE_emu_lim_uncl")
+        config="run3_2022_preEE_emu_limited"
+        datasets='data_egamma_C'
+        processes='data'
+        categories='cat_emu_sr'
+        variables='puppi_met_pt,puppi_met_pt_recoil_corr'
+        # 'leading_b_jet_eta,emu_deltaeta,emu_deltaphi,p_zeta_vis,p_zeta_miss,D_zeta,dphi_e_met,dphi_mu_met,dphi_emu_met,ht_jets,ht_bjets,st,met_over_sqrt_ht,uT,sum_btag_top2,N_b_jets_loose,N_b_jets_medium,min_m_bl,max_m_bl,min_dR_l_b,max_dR_l_b,pT_bb_flat,abs_deta_bb,dR_bb_flat,dphi_bb_met,m_jj_flat,abs_deta_jj,dR_jj_flat,zeppenfeld_emu,eta_centrality_emu,pt_centrality,lep_pt_asymmetry,pt_balance_ratio,pt_emu_over_fastmtt_mass,m_vis_over_fastmtt_mass'
+        workflow='local'
+    ;;
+    "run3_2022preEE_emu_signals")
+      config="run3_2022_preEE_emu"
+      processes=$mssm_ggF_signal,$mssm_bbh_signal
+      datasets=$mssm_ggF_signal,$mssm_bbh_signal
+	  categories=$categories_emu
+	  variables=$variables_emu
+	  workflow='htcondor'
+    ;;
+    "run3_2022postEE_emu_signals")
+      config="run3_2022_postEE_emu"
+      processes=$mssm_ggF_signal,$mssm_bbh_signal
+      datasets=$mssm_ggF_signal,$mssm_bbh_signal
+	    categories=$categories_emu
+	    variables=$variables_emu
+	    workflow='htcondor'
+    ;;
+    "run3_2023preBPix_emu_signals")
+      config="run3_2023_preBPix_emu"
+      processes=$mssm_ggF_signal,$mssm_bbh_signal
+      datasets=$mssm_ggF_signal,$mssm_bbh_signal
+	    categories=$categories_emu
+	    variables=$variables_emu
+	    workflow='htcondor'
+    ;;
+    "run3_2023postBPix_emu_signals")
+      config="run3_2023_postBPix_emu"
+      processes=$mssm_ggF_signal,$mssm_bbh_signal
+      datasets=$mssm_ggF_signal,$mssm_bbh_signal
+	    categories=$categories_emu
+	    variables=$variables_emu
+	    workflow='htcondor'
+    ;;
+
+################################
+###### 2022postEE_limited ######
+################################  
+    "run3_2022postEE_emu_lim")
+        config="run3_2022_postEE_emu_limited"
+        processes='data,tt_dl'
+        datasets='data_egamma_E,TTto2L2Nu'
+	     categories='cat_emu_sr' #__nj0,cat_emu_sr__nj1'
+	     variables='phi_cp_emu,cos_phi_cp_emu,sin_phi_cp_emu'
+	     workflow='local'
+    ;;
+
+#########################
+####### 2022postEE ######
+#########################
+    
+    "run3_2022postEE_emu")
+      config="run3_2022_postEE_emu"
+      processes='data,dy_lep,dy_tt_m50,ggphi_phitt,st,tt,h_vbf_htt,vh_htt,wj,vv,vvv,bbphi_phitt_100,ggphi_phitt_100,'
+      datasets='data_egamma_E,data_egamma_F,data_egamma_G,data_mu_E,data_mu_F,data_mu_G,DYto2L_M_10to50_amcatnloFXFX,DYto2L_M_50_amcatnloFXFX,DYto2L_M_50_0J_amcatnloFXFX,DYto2L_M_50_1J_amcatnloFXFX,DYto2L_M_50_2J_amcatnloFXFX,DYto2Tau_MLL_50_0J_amcatnloFXFX,DYto2Tau_MLL_50_1J_amcatnloFXFX,DYto2Tau_MLL_50_2J_amcatnloFXFX,GluGluHto2Tau_UncorrelatedDecay_SM_UnFiltered_ProdAndDecay,TbarWplusto4Q,TWminusto4Q,TbarWplusto2L2Nu,TbarWplustoLNu2Q,TWminusto2L2Nu,TWminustoLNu2Q,TTto2L2Nu,TTto4Q,TTtoLNu2Q,VBFHto2Tau_UncorrelatedDecay_UnFiltered,WminusHto2Tau_UncorrelatedDecay_UnFiltered,WplusHto2Tau_UncorrelatedDecay_UnFiltered,WtoLNu_madgraphMLM,WtoLNu_1J_madgraphMLM,WtoLNu_2J_madgraphMLM,WtoLNu_3J_madgraphMLM,WtoLNu_4J_madgraphMLM,WW,WZ,ZZ,WWW_4F,WWZ_4F,WZZ,ZZZ,ZHto2Tau_UncorrelatedDecay_UnFiltered,bbphi_phitt_100,ggphi_phitt_100,'
+	  categories='cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_ggh_M100' #$categories_emu
+	  variables='bdt_raw_score_ggh_M100,bdt_raw_score_bbh_M100'		
+      categories=$categories_emu	    
+      workflow='local'
+    ;;
+
+    "run3_2022postEE_emu_2D")
+        config="run3_2022_postEE_emu"
+        data=$data_egamma_2022postEE$data_mu_2022postEE
+        bkg_ewk=$bkg_ewk
+        bkg_single_top=$bkg_single_top
+        bkg_ttbar=$bkg_ttbar
+        datasets=$bkg_ewk$bkg_single_top$bkg_ttbar
+        processes='dy_lep,vv,tt,st,wj'
+	      categories=$categories_emu
+	      variables='leading_jet_eta-leading_jet_phi'
+	      workflow='htcondor'
+    ;;
+
+###################################
+####### 2023preBPix_limited #######
+###################################
+    "run3_2023preBPix_emu_lim")
+        config="run3_2023_preBPix_emu_limited"
+        processes='tt_dl'
+        datasets='TTto2L2Nu'
+	     categories='cat_emu_sr'
+	     variables="D_zeta"
+	     workflow='local'
+    ;;
+
+##############################
+####### 2023preBPix ##########
+##############################
+    "run3_2023preBPix_emu")
+        config="run3_2023_preBPix_emu"
+        processes='data,dy_lep,dy_tt_m50,ggphi_phitt,st,tt,h_vbf_htt,vh_htt,wj,vv,vvv,bbphi_phitt_100,ggphi_phitt_100,'
+        datasets='data_egamma_Cv123,data_egamma_Cv4,data_mu_Cv4,data_mu_Cv123,DYto2L_M_10to50_amcatnloFXFX,DYto2L_M_50_amcatnloFXFX,DYto2L_M_50_0J_amcatnloFXFX,DYto2L_M_50_1J_amcatnloFXFX,DYto2L_M_50_2J_amcatnloFXFX,DYto2Tau_MLL_50_0J_amcatnloFXFX,DYto2Tau_MLL_50_1J_amcatnloFXFX,DYto2Tau_MLL_50_2J_amcatnloFXFX,GluGluHto2Tau_UncorrelatedDecay_SM_UnFiltered_ProdAndDecay,TbarWplusto4Q,TWminusto4Q,TbarWplusto2L2Nu,TbarWplustoLNu2Q,TWminusto2L2Nu,TWminustoLNu2Q,TTto2L2Nu,TTto4Q,TTtoLNu2Q,VBFHto2Tau_UncorrelatedDecay_UnFiltered,WminusHto2Tau_UncorrelatedDecay_UnFiltered,WplusHto2Tau_UncorrelatedDecay_UnFiltered,WtoLNu_madgraphMLM,WtoLNu_1J_madgraphMLM,WtoLNu_2J_madgraphMLM,WtoLNu_3J_madgraphMLM,WtoLNu_4J_madgraphMLM,WW,WZ,ZZ,WWW_4F,WWZ_4F,WZZ,ZZZ,ZHto2Tau_UncorrelatedDecay_UnFiltered,bbphi_phitt_100,ggphi_phitt_100,'
+	      categories='cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_ggh_M100' #$categories_emu
+	      variables='bdt_raw_score_ggh_M100,bdt_raw_score_bbh_M100'
+	      workflow='htcondor'
+    ;;
+
+
+####################################
+####### 2023postBPix_limited #######
+####################################
+    "run3_2023postBPix_emu_lim")
+        config="run3_2023_postBPix_emu_limited"
+        processes='data,tt_dl'
+        datasets='data_egamma_D,TTto2L2Nu'
+	     categories='cat_emu_sr'
+	     variables="puppi_met_pt,puppi_met_phi"
+	     workflow='local'
+    ;;
+
+############################
+####### 2023postBPix #######
+############################
+    "run3_2023postBPix_emu")
+        config="run3_2023_postBPix_emu"
+        processes='data,dy_lep,dy_tt_m50,ggphi_phitt,st,tt,h_vbf_htt,vh_htt,wj,vv,vvv,bbphi_phitt_100,ggphi_phitt_100,'
+        datasets='data_egamma_D,data_mu_D,DYto2L_M_10to50_amcatnloFXFX,DYto2L_M_50_amcatnloFXFX,DYto2L_M_50_0J_amcatnloFXFX,DYto2L_M_50_1J_amcatnloFXFX,DYto2L_M_50_2J_amcatnloFXFX,DYto2Tau_MLL_50_0J_amcatnloFXFX,DYto2Tau_MLL_50_1J_amcatnloFXFX,DYto2Tau_MLL_50_2J_amcatnloFXFX,GluGluHto2Tau_UncorrelatedDecay_SM_UnFiltered_ProdAndDecay,TbarWplusto4Q,TWminusto4Q,TbarWplusto2L2Nu,TbarWplustoLNu2Q,TWminusto2L2Nu,TWminustoLNu2Q,TTto2L2Nu,TTto4Q,TTtoLNu2Q,VBFHto2Tau_UncorrelatedDecay_UnFiltered,WminusHto2Tau_UncorrelatedDecay_UnFiltered,WplusHto2Tau_UncorrelatedDecay_UnFiltered,WtoLNu_madgraphMLM,WtoLNu_1J_madgraphMLM,WtoLNu_2J_madgraphMLM,WtoLNu_3J_madgraphMLM,WtoLNu_4J_madgraphMLM,WW,WZ,ZZ,WWW_4F,WWZ_4F,WZZ,ZZZ,ZHto2Tau_UncorrelatedDecay_UnFiltered,bbphi_phitt_100,ggphi_phitt_100,'
+	      categories='cat_emu_sr__bdt_ggh_M100,cat_emu_sr__bdt_ggh_M100' #$categories_emu
+	      variables='bdt_raw_score_ggh_M100,bdt_raw_score_bbh_M100'	
+        # categories=$categories_emu
+	      # variables=$variables_emu
+	     workflow='htcondor'
+    ;;
+
+    "run3_2023postBPix_emu_FF")
+        config="run3_2023_postBPix_emu"
+        data=$data_egamma_2023postBPix$data_mu_2023postBPix
+        bkg_ewk=$bkg_ewk
+        bkg_single_top=$bkg_single_top
+        bkg_ttbar=$bkg_ttbar
+        datasets=$data$bkg_ewk$bkg_single_top$bkg_ttbar
+        processes='dy_lep,vv,tt,st,wj,data'
+        categories=$categories_emu
+        variables=$variables_emu
+        workflow='htcondor'
+    ;;
+    "run3_eff_maps_lim")
+            # limited configs (fast tests / local)
+            config="run3_2022_preEE_emu_limited" #,run3_2022_postEE_emu_limited,run3_2023_preBPix_emu_limited,run3_2023_postBPix_emu_limited"
+
+            # small MC set to populate b/c/light (ttbar gives b,c; DY/W give light + some c)
+            eff_datasets_lim='TTto2L2Nu,DYto2Tau_MLL_50_0J_amcatnloFXFX,WtoLNu_madgraphMLM,'
+
+            # one dataset list per config, separated by ':'
+            datasets="${eff_datasets_lim}"
+            processes='tt_dl,dy_lep,wj'
+            workflow='local'
+        ;;
+
+    "run3_eff_maps_22")
+            # full configs (run on batch)
+            config="run3_2022_preEE_emu" 
+
+            # broader MC mixture (still MC-only)
+            mc_eff_maps="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_top$bkg_ttbar"
+
+            datasets="${mc_eff_maps}"
+            processes="dy_lep,dy_tt_m50,st,tt,wj,vv,vvv"
+            workflow='htcondor'
+        ;;
+    "run3_eff_maps_22EE")
+            # full configs (run on batch)
+            config="run3_2022_postEE_emu" 
+
+            # broader MC mixture (still MC-only)
+            mc_eff_maps="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_top$bkg_ttbar"
+
+            datasets="${mc_eff_maps}"
+            processes="dy_lep,dy_tt_m50,st,tt,wj,vv,vvv"
+            workflow='htcondor'
+        ;;
+    "run3_eff_maps_23")
+            # full configs (run on batch)
+            config="run3_2023_preBPix_emu" 
+
+            # broader MC mixture (still MC-only)
+            mc_eff_maps="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_top$bkg_ttbar"
+
+            datasets="${mc_eff_maps}"
+            processes="dy_lep,dy_tt_m50,st,tt,wj,vv,vvv"
+            workflow='htcondor'
+        ;;
+    "run3_eff_maps_23BPix")
+            # full configs (run on batch)
+            config="run3_2023_postBPix_emu" 
+
+            # broader MC mixture (still MC-only)
+            mc_eff_maps="$bkg_dy$bkg_wj$bkg_vv$bkg_vvv$bkg_top$bkg_ttbar"
+
+            datasets="${mc_eff_maps}"
+            processes="dy_lep,dy_tt_m50,st,tt,wj,vv,vvv"
+            workflow='htcondor'
+        ;;
+    *)
+    echo "Unknown run argument!"
+    exit
+
+esac
+}

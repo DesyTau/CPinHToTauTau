@@ -64,7 +64,8 @@ def stitching_weight_setup(
     dataset = self.dataset_inst.name 
     if dataset in self.config_inst.x.stitch_samples:
         start_str = [s for s in ["DYto2L","WtoLNu"] if dataset.startswith(s)]
-        self.var = 'NpNLO' if start_str == "DYto2L" else 'Njets'
+        # self.var = 'NpNLO' if start_str == "DYto2L" else 'Njets'
+        self.var = "NpNLO" if dataset.startswith("DYto2L") else "Njets"
         self.config_inst.campaign.ecm
         stitch_samples = {get_nj(key): (get_xsec(self, key), 
                                         self.config_inst.get_dataset(key).n_events)

@@ -38,3 +38,10 @@ data
 .mypy_cache
 .vscode
 .python-version
+scripts/migration_file/
+scripts/migration_audit.txt
+scripts/failed_jobs.csv
+scripts/remaining_*.txt
+scripts/check_migration.py
+scripts/distribution_for_datacard_bkgs.sh
+scripts/tar_eos_output.sh
